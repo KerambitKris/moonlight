@@ -8,13 +8,11 @@ import time
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-# ================== НАСТРОЙКИ ==================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DA_TOKEN = os.getenv("DA_TOKEN")
 DA_URL = os.getenv("DA_URL")
 
-PANEL_URL = os.getenv("PANEL_URL")  # http://ip:2053
+PANEL_URL = os.getenv("PANEL_URL")
 PANEL_LOGIN = os.getenv("PANEL_LOGIN")
 PANEL_PASSWORD = os.getenv("PANEL_PASSWORD")
 INBOUND_ID = int(os.getenv("INBOUND_ID"))
@@ -22,8 +20,7 @@ INBOUND_ID = int(os.getenv("INBOUND_ID"))
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# ================== БАЗА ==================
-
+# ===== БАЗА =====
 conn = sqlite3.connect("db.db")
 cur = conn.cursor()
 
@@ -49,12 +46,7 @@ def add_balance(user_id, amount):
     cur.execute("UPDATE users SET balance = balance + ? WHERE user_id=?", (amount, user_id))
     conn.commit()
 
-def minus_balance(user_id, amount):
-    cur.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (amount, user_id))
-    conn.commit()
-
-# ================== 3X-UI ==================
-
+# ===== 3X-UI =====
 def login_panel():
     s = requests.Session()
     s.post(f"{PANEL_URL}/login", data={
@@ -75,7 +67,6 @@ def create_vpn(user_id, days=30):
             "clients": [
                 {
                     "id": client_id,
-                    "alterId": 0,
                     "email": f"user_{user_id}",
                     "limitIp": 1,
                     "totalGB": 0,
@@ -90,20 +81,12 @@ def create_vpn(user_id, days=30):
 
     return f"{PANEL_URL}/sub/{client_id}"
 
-# ================== КНОПКИ ==================
-
+# ===== КНОПКИ =====
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton("🔐 Мой VPN"))
 menu.add(KeyboardButton("💰 Пополнить"), KeyboardButton("👤 Профиль"))
-menu.add(KeyboardButton("🌍 Серверы"))
 
-buy_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-buy_menu.add(KeyboardButton("30 дней — 199₽"))
-buy_menu.add(KeyboardButton("90 дней — 499₽"))
-buy_menu.add(KeyboardButton("⬅️ Назад"))
-
-# ================== СТАРТ ==================
-
+# ===== СТАРТ =====
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     get_balance(msg.from_user.id)
@@ -111,84 +94,51 @@ async def start(msg: types.Message):
     await msg.answer(
 """🔐 Moonlight VPN
 
-👋 Добро пожаловать в Moonlight VPN!
-
-⚡ Быстрый и стабильный VPN для ваших устройств.
-
-⭐️ Новостной канал — @moonlight_vpn_news
-⭐️ Техническая Поддержка — @mtfunit
+👋 Добро пожаловать!
 
 👇 Выберите действие:""",
         reply_markup=menu
     )
 
-# ================== ПРОФИЛЬ ==================
-
+# ===== ПРОФИЛЬ =====
 @dp.message_handler(lambda m: m.text == "👤 Профиль")
 async def profile(msg: types.Message):
     bal = get_balance(msg.from_user.id)
     await msg.answer(f"💰 Баланс: {bal}₽")
 
-# ================== ПОПОЛНЕНИЕ ==================
-
+# ===== ПОПОЛНЕНИЕ =====
 @dp.message_handler(lambda m: m.text == "💰 Пополнить")
 async def deposit(msg: types.Message):
+    user_id = msg.from_user.id
+
+    link = f"{DA_URL}?comment={user_id}"
+
     await msg.answer(
 f"""💳 Пополнение
 
 Перейди по ссылке и закинь любую сумму:
 
-{DA_URL}
+{link}
 
-⚠️ После оплаты деньги придут автоматически"""
+⚠️ ВАЖНО: не меняй комментарий!"""
     )
 
-# ================== ПОКУПКА ==================
-
+# ===== ПОКУПКА =====
 @dp.message_handler(lambda m: m.text == "🔐 Мой VPN")
-async def vpn_menu(msg: types.Message):
-    await msg.answer("Выбери тариф:", reply_markup=buy_menu)
-
-@dp.message_handler(lambda m: m.text == "⬅️ Назад")
-async def back(msg: types.Message):
-    await msg.answer("Главное меню", reply_markup=menu)
-
-@dp.message_handler(lambda m: "30 дней" in m.text)
-async def buy_30(msg: types.Message):
+async def buy(msg: types.Message):
     user_id = msg.from_user.id
     bal = get_balance(user_id)
 
     if bal < 199:
-        return await msg.answer("❌ Недостаточно средств")
+        return await msg.answer("❌ Нужно минимум 199₽")
 
-    minus_balance(user_id, 199)
+    add_balance(user_id, -199)
+
     vpn = create_vpn(user_id, 30)
 
-    await msg.answer(f"""✅ Оплачено!
+    await msg.answer(f"✅ Готово!\n\n🔐 {vpn}")
 
-🔐 Ваш VPN:
-{vpn}
-""")
-
-@dp.message_handler(lambda m: "90 дней" in m.text)
-async def buy_90(msg: types.Message):
-    user_id = msg.from_user.id
-    bal = get_balance(user_id)
-
-    if bal < 499:
-        return await msg.answer("❌ Недостаточно средств")
-
-    minus_balance(user_id, 499)
-    vpn = create_vpn(user_id, 90)
-
-    await msg.answer(f"""✅ Оплачено!
-
-🔐 Ваш VPN:
-{vpn}
-""")
-
-# ================== АВТО-ДОНАТЫ ==================
-
+# ===== ДОНАТЫ =====
 last_id = 0
 
 async def check_donates():
@@ -206,22 +156,25 @@ async def check_donates():
                     last_id = d["id"]
 
                     amount = int(float(d["amount"]))
-                    user_id = int(d["username"])
+
+                    if not d["message"]:
+                        continue
+
+                    user_id = int(d["message"])
 
                     add_balance(user_id, amount)
 
                     await bot.send_message(
                         user_id,
-                        f"💰 Пополнение: +{amount}₽"
+                        f"💰 +{amount}₽ зачислено"
                     )
 
-        except:
-            pass
+        except Exception as e:
+            print(e)
 
         await asyncio.sleep(10)
 
-# ================== ЗАПУСК ==================
-
+# ===== ЗАПУСК =====
 async def main():
     asyncio.create_task(check_donates())
     await dp.start_polling()

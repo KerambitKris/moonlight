@@ -1,39 +1,31 @@
 import asyncio
-import os
+import time
 import random
-from datetime import datetime, timedelta
+import aiohttp
+import os
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import CommandStart
 
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+DA_TOKEN = os.getenv("DA_TOKEN")
+DA_URL = os.getenv("DA_URL")
 
-bot = Bot(token=TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# =======================
-# ДАННЫЕ (временно)
-# =======================
-
 users = {}
+sessions = {}  # user_id -> {amount, time}
 
-promo_codes = {
-    "Burmalda": {"amount": 300, "uses_left": 5},
-}
-
-waiting_promo = {}
-
-# =======================
-# КНОПКИ
-# =======================
+# ========= UI =========
 
 def main_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔐 Мой VPN", callback_data="vpn")],
             [
-                InlineKeyboardButton(text="💎 Купить", callback_data="buy"),
+                InlineKeyboardButton(text="💳 Пополнить", callback_data="topup"),
                 InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
             ],
             [InlineKeyboardButton(text="🌍 Серверы", callback_data="servers")],
@@ -48,208 +40,162 @@ def back_menu():
         ]
     )
 
-# =======================
-# START
-# =======================
+# ========= START =========
 
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
         "🔐 Moonlight VPN\n\n"
-        "👋 Добро пожаловать в Moonlight VPN!\n\n"
-        "⚡ Быстрый и стабильный VPN для ваших устройств.\n\n"
-        "⭐️ Новостной канал — @moonlight_vpn_news\n"
-        "⭐️ Поддержка — @mtfunit\n\n"
+        "👋 Добро пожаловать!\n\n"
         "👇 Выберите действие:",
         reply_markup=main_menu()
     )
 
-# =======================
-# ГЛАВНОЕ МЕНЮ
-# =======================
+# ========= MENU =========
 
 @dp.callback_query(F.data == "home")
 async def home(callback: CallbackQuery):
     await callback.message.delete()
-    await callback.message.answer(
-        "🔐 Moonlight VPN\n\n👇 Выберите действие:",
-        reply_markup=main_menu()
-    )
+    await callback.message.answer("👇 Выберите действие:", reply_markup=main_menu())
     await callback.answer()
 
-# =======================
-# СЕРВЕРА
-# =======================
-
-def load_bar(percent):
-    filled = int(percent / 10)
-    bar = "█" * filled + "░" * (10 - filled)
-
-    if percent <= 40:
-        color = "🟢"
-    elif percent <= 70:
-        color = "🟡"
-    else:
-        color = "🔴"
-
-    return f"{color} {percent}%\n[{bar}]"
-
-
-@dp.callback_query(F.data == "servers")
-async def servers(callback: CallbackQuery):
-    load = random.randint(0, 100)
-
-    text = (
-        "🌍 Доступные сервера:\n\n"
-        "🇩🇪 Германия\n"
-        f"{load_bar(load)}"
-    )
-
-    await callback.message.delete()
-    await callback.message.answer(text, reply_markup=back_menu())
-    await callback.answer()
-
-# =======================
-# ПРОФИЛЬ
-# =======================
+# ========= PROFILE =========
 
 @dp.callback_query(F.data == "profile")
 async def profile(callback: CallbackQuery):
     user_id = callback.from_user.id
+    user = users.setdefault(user_id, {"balance": 0, "sub": None})
 
-    user = users.get(user_id, {"balance": 0, "sub": None})
+    sub = user["sub"] if user["sub"] else "❌ Нет подписки"
 
-    balance = user["balance"]
-
-    if user["sub"]:
-        tariff = f"До {user['sub']}"
-    else:
-        tariff = "❌ Нет активной подписки"
-
-    text = (
-        "👤 Профиль\n\n"
-        f"Баланс: {balance}₽\n\n"
+    await callback.message.delete()
+    await callback.message.answer(
+        f"👤 Профиль\n\n"
+        f"Баланс: {user['balance']}₽\n"
         f"ID: {user_id}\n"
-        f"Тариф: {tariff}"
+        f"Тариф: {sub}",
+        reply_markup=back_menu()
     )
-
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🎁 Ввести промокод", callback_data="promo")],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
-        ]
-    )
-
-    await callback.message.delete()
-    await callback.message.answer(text, reply_markup=keyboard)
     await callback.answer()
 
-# =======================
-# ПРОМОКОДЫ
-# =======================
-
-@dp.callback_query(F.data == "promo")
-async def promo_enter(callback: CallbackQuery):
-    waiting_promo[callback.from_user.id] = True
-    await callback.message.answer("Введите промокод:")
-    await callback.answer()
-
-
-@dp.message()
-async def promo_check(message: Message):
-    user_id = message.from_user.id
-
-    if not waiting_promo.get(user_id):
-        return
-
-    code = message.text.upper()
-
-    if code in promo_codes:
-        promo = promo_codes[code]
-
-        if promo["uses_left"] > 0:
-            users.setdefault(user_id, {"balance": 0, "sub": None})
-
-            users[user_id]["balance"] += promo["amount"]
-            promo["uses_left"] -= 1
-
-            await message.answer(f"✅ Начислено {promo['amount']}₽ на баланс")
-        else:
-            await message.answer("❌ Промокод закончился")
-    else:
-        await message.answer("❌ Неверный промокод")
-
-    waiting_promo[user_id] = False
-
-# =======================
-# ПОКУПКА
-# =======================
-
-@dp.callback_query(F.data == "buy")
-async def buy(callback: CallbackQuery):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💳 1 месяц — 199₽", callback_data="sub_1")],
-            [InlineKeyboardButton(text="💳 3 месяца — 499₽", callback_data="sub_3")],
-            [InlineKeyboardButton(text="💳 12 месяцев — 1499₽", callback_data="sub_12")],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
-        ]
-    )
-
-    await callback.message.delete()
-    await callback.message.answer("💎 Выберите тариф:", reply_markup=keyboard)
-    await callback.answer()
-
-# =======================
-# ПОКУПКА С БАЛАНСА
-# =======================
-
-@dp.callback_query(F.data.startswith("sub_"))
-async def buy_sub(callback: CallbackQuery):
-    user_id = callback.from_user.id
-
-    users.setdefault(user_id, {"balance": 0, "sub": None})
-
-    prices = {
-        "sub_1": (199, 30),
-        "sub_3": (499, 90),
-        "sub_12": (1499, 365)
-    }
-
-    price, days = prices[callback.data]
-    balance = users[user_id]["balance"]
-
-    if balance >= price:
-        users[user_id]["balance"] -= price
-        expire = datetime.now() + timedelta(days=days)
-        users[user_id]["sub"] = expire.strftime("%d.%m.%Y")
-
-        await callback.message.answer("✅ Подписка активирована!")
-    else:
-        need = price - balance
-        await callback.message.answer(f"❌ Нужно доплатить: {need}₽")
-
-    await callback.answer()
-
-# =======================
-# VPN
-# =======================
+# ========= VPN =========
 
 @dp.callback_query(F.data == "vpn")
 async def vpn(callback: CallbackQuery):
     await callback.message.delete()
     await callback.message.answer(
-        "🔐 VPN пока не активирован\n\nКупите подписку",
+        "🔐 VPN пока не активирован",
         reply_markup=back_menu()
     )
     await callback.answer()
 
-# =======================
-# ЗАПУСК
-# =======================
+# ========= SERVERS =========
+
+def load_bar(percent):
+    filled = int(percent / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+
+    if percent < 40:
+        color = "🟢"
+    elif percent < 70:
+        color = "🟡"
+    else:
+        color = "🔴"
+
+    return f"{color} [{bar}] {percent}%"
+
+
+@dp.callback_query(F.data == "servers")
+async def servers(callback: CallbackQuery):
+    load = random.randint(10, 95)
+
+    await callback.message.delete()
+    await callback.message.answer(
+        "🌍 Доступные сервера:\n\n"
+        "🇩🇪 Германия\n"
+        f"{load_bar(load)}",
+        reply_markup=back_menu()
+    )
+    await callback.answer()
+
+# ========= TOPUP =========
+
+@dp.callback_query(F.data == "topup")
+async def topup(callback: CallbackQuery):
+    user_id = callback.from_user.id
+
+    amount = random.choice([100, 200, 300, 500]) + random.randint(1, 99)
+
+    sessions[user_id] = {
+        "amount": amount,
+        "time": time.time()
+    }
+
+    await callback.message.delete()
+    await callback.message.answer(
+        f"💳 Оплата\n\n"
+        f"Переведи ровно: {amount}₽\n\n"
+        f"⚠️ Сумма должна совпадать!\n"
+        f"⏱ Время: 5 минут\n\n"
+        f"После оплаты подожди 10-30 сек",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💳 Оплатить", url=DA_URL)],
+                [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
+            ]
+        )
+    )
+    await callback.answer()
+
+# ========= CHECK PAYMENTS =========
+
+async def check_donations():
+    url = "https://www.donationalerts.com/api/v1/alerts/donations"
+
+    headers = {
+        "Authorization": f"Bearer {DA_TOKEN}"
+    }
+
+    processed = set()
+
+    while True:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                data = await resp.json()
+
+                for d in data.get("data", []):
+                    if d["id"] in processed:
+                        continue
+
+                    amount = int(float(d["amount"]))
+
+                    for user_id, s in list(sessions.items()):
+                        # проверка времени
+                        if time.time() - s["time"] > 300:
+                            del sessions[user_id]
+                            continue
+
+                        if s["amount"] == amount:
+                            users.setdefault(user_id, {"balance": 0, "sub": None})
+                            users[user_id]["balance"] += amount
+
+                            await bot.send_message(
+                                user_id,
+                                f"💰 Баланс пополнен на {amount}₽"
+                            )
+
+                            del sessions[user_id]
+                            processed.add(d["id"])
+                            break
+
+        await asyncio.sleep(10)
+
+# ========= START =========
 
 async def main():
+    asyncio.create_task(check_donations())
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -54,34 +54,32 @@ def minus_balance(user_id, amount):
     cur.execute("UPDATE users SET balance = balance - ? WHERE user_id=?", (amount, user_id))
     conn.commit()
 
-# ================== ПИНГ С КЭШЕМ ==================
+# ================== ПИНГ (красивый) ==================
 
 ping_cache = {}
 
-def format_ping(ping):
-    if ping < 40:
-        status = "🟢"
-    elif ping < 70:
-        status = "🟡"
-    else:
-        status = "🔴"
-    return f"{ping}ms {status}"
+def format_ping(p):
+    if p < 40:
+        return f"{p}ms 🟢"
+    elif p < 70:
+        return f"{p}ms 🟡"
+    return f"{p}ms 🔴"
 
-def get_ping(server):
+def get_ping(name):
     now = time.time()
 
-    if server in ping_cache:
-        ping, ts = ping_cache[server]
+    if name in ping_cache:
+        ping, ts = ping_cache[name]
 
         if now - ts < 1800:
             return format_ping(ping)
 
         ping += random.randint(-8, 8)
-        ping = max(15, min(120, ping))
+        ping = max(20, min(120, ping))
     else:
-        ping = random.randint(20, 80)
+        ping = random.randint(25, 80)
 
-    ping_cache[server] = (ping, now)
+    ping_cache[name] = (ping, now)
     return format_ping(ping)
 
 # ================== 3X-UI ==================
@@ -98,22 +96,19 @@ def create_vpn(user_id, days=30):
     s = login_panel()
 
     client_id = str(uuid.uuid4())
-    expiry_time = int((time.time() + days * 86400) * 1000)
+    expiry = int((time.time() + days * 86400) * 1000)
 
     data = {
         "id": INBOUND_ID,
         "settings": {
-            "clients": [
-                {
-                    "id": client_id,
-                    "alterId": 0,
-                    "email": f"user_{user_id}",
-                    "limitIp": 1,
-                    "totalGB": 0,
-                    "expiryTime": expiry_time,
-                    "enable": True
-                }
-            ]
+            "clients": [{
+                "id": client_id,
+                "email": f"user_{user_id}",
+                "limitIp": 1,
+                "totalGB": 0,
+                "expiryTime": expiry,
+                "enable": True
+            }]
         }
     }
 
@@ -124,14 +119,9 @@ def create_vpn(user_id, days=30):
 # ================== КНОПКИ ==================
 
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
-menu.add(KeyboardButton("🔐 Мой VPN"))
-menu.add(KeyboardButton("💰 Пополнить"), KeyboardButton("👤 Профиль"))
-menu.add(KeyboardButton("🌍 Серверы"))
-
-buy_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-buy_menu.add(KeyboardButton("30 дней — 199₽"))
-buy_menu.add(KeyboardButton("90 дней — 499₽"))
-buy_menu.add(KeyboardButton("⬅️ Назад"))
+menu.add("🔐 Мой VPN")
+menu.add("🌍 Серверы", "👤 Профиль")
+menu.add("💰 Пополнить")
 
 # ================== СТАРТ ==================
 
@@ -142,7 +132,7 @@ async def start(msg: types.Message):
     await msg.answer(
 """🔐 Moonlight VPN
 
-👋 Добро пожаловать!
+⚡ Быстрый и стабильный VPN
 
 👇 Выберите действие:""",
         reply_markup=menu
@@ -152,8 +142,17 @@ async def start(msg: types.Message):
 
 @dp.message_handler(lambda m: m.text == "👤 Профиль")
 async def profile(msg: types.Message):
-    bal = get_balance(msg.from_user.id)
-    await msg.answer(f"💰 Баланс: {bal}₽")
+    user_id = msg.from_user.id
+    bal = get_balance(user_id)
+
+    await msg.answer(
+f"""👤 Профиль
+
+Баланс: {bal}₽
+Тариф: ❌ Нет активной подписки
+ID: {user_id}""",
+        reply_markup=menu
+    )
 
 # ================== ПОПОЛНЕНИЕ ==================
 
@@ -162,9 +161,14 @@ async def deposit(msg: types.Message):
     await msg.answer(
 f"""💳 Пополнение
 
+Перейди по ссылке:
 {DA_URL}
 
-После оплаты деньги придут автоматически"""
+В комментарии укажи свой ID:
+{msg.from_user.id}
+
+⚠️ ИНАЧЕ деньги не зачислятся""",
+        reply_markup=menu
     )
 
 # ================== СЕРВЕРА ==================
@@ -179,7 +183,6 @@ async def servers(msg: types.Message):
 🇳🇱 Нидерланды — {get_ping("nl")}
 
 ──────────────
-🚄 Обход для моб. интернета
 
 ⚡ Автовыбор (обход блокировок)
 
@@ -187,45 +190,24 @@ async def servers(msg: types.Message):
 🇩🇪 Обход 2 — {get_ping("de2")}
 🇩🇪 Обход 3 — {get_ping("de3")}
 """
-    await msg.answer(text)
+    await msg.answer(text, reply_markup=menu)
 
-# ================== ПОКУПКА ==================
+# ================== VPN ==================
 
 @dp.message_handler(lambda m: m.text == "🔐 Мой VPN")
-async def vpn_menu(msg: types.Message):
-    await msg.answer("Выбери тариф:", reply_markup=buy_menu)
-
-@dp.message_handler(lambda m: m.text == "⬅️ Назад")
-async def back(msg: types.Message):
-    await msg.answer("Главное меню", reply_markup=menu)
-
-@dp.message_handler(lambda m: "30 дней" in m.text)
-async def buy_30(msg: types.Message):
+async def vpn(msg: types.Message):
     user_id = msg.from_user.id
     bal = get_balance(user_id)
 
     if bal < 199:
-        return await msg.answer("❌ Недостаточно средств")
+        return await msg.answer("❌ Недостаточно средств", reply_markup=menu)
 
     minus_balance(user_id, 199)
-    vpn = create_vpn(user_id, 30)
+    link = create_vpn(user_id)
 
-    await msg.answer(f"✅ Ваш VPN:\n{vpn}")
+    await msg.answer(f"🔐 Ваш VPN:\n{link}", reply_markup=menu)
 
-@dp.message_handler(lambda m: "90 дней" in m.text)
-async def buy_90(msg: types.Message):
-    user_id = msg.from_user.id
-    bal = get_balance(user_id)
-
-    if bal < 499:
-        return await msg.answer("❌ Недостаточно средств")
-
-    minus_balance(user_id, 499)
-    vpn = create_vpn(user_id, 90)
-
-    await msg.answer(f"✅ Ваш VPN:\n{vpn}")
-
-# ================== АВТО-ДОНАТЫ ==================
+# ================== ДОНАТЫ ==================
 
 last_id = 0
 
@@ -244,7 +226,11 @@ async def check_donates():
                     last_id = d["id"]
 
                     amount = int(float(d["amount"]))
-                    user_id = int(d["username"])
+
+                    try:
+                        user_id = int(d["message"])  # фикс!
+                    except:
+                        continue
 
                     add_balance(user_id, amount)
 

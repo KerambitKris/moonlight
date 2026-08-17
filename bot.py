@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -13,15 +13,16 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # =======================
-# ДАННЫЕ
+# ДАННЫЕ (временно)
 # =======================
 
-users = {}  
-# user_id: {balance, sub_until}
+users = {}
 
-promo_codes = {}  
-# code: {amount, uses_left}
+promo_codes = {
+    "Burmalda": {"amount": 300, "uses_left": 5},
+}
 
+waiting_promo = {}
 
 # =======================
 # КНОПКИ
@@ -47,7 +48,6 @@ def back_menu():
         ]
     )
 
-
 # =======================
 # START
 # =======================
@@ -58,13 +58,14 @@ async def start(message: Message):
         "🔐 Moonlight VPN\n\n"
         "👋 Добро пожаловать в Moonlight VPN!\n\n"
         "⚡ Быстрый и стабильный VPN для ваших устройств.\n\n"
+        "⭐️ Новостной канал — @moonlight_vpn_news\n"
+        "⭐️ Поддержка — @mtfunit\n\n"
         "👇 Выберите действие:",
         reply_markup=main_menu()
     )
 
-
 # =======================
-# ГЛАВНАЯ
+# ГЛАВНОЕ МЕНЮ
 # =======================
 
 @dp.callback_query(F.data == "home")
@@ -76,7 +77,6 @@ async def home(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 # =======================
 # СЕРВЕРА
 # =======================
@@ -85,9 +85,9 @@ def load_bar(percent):
     filled = int(percent / 10)
     bar = "█" * filled + "░" * (10 - filled)
 
-    if percent < 40:
+    if percent <= 40:
         color = "🟢"
-    elif percent < 70:
+    elif percent <= 70:
         color = "🟡"
     else:
         color = "🔴"
@@ -97,7 +97,7 @@ def load_bar(percent):
 
 @dp.callback_query(F.data == "servers")
 async def servers(callback: CallbackQuery):
-    load = random.randint(10, 100)
+    load = random.randint(0, 100)
 
     text = (
         "🌍 Доступные сервера:\n\n"
@@ -108,7 +108,6 @@ async def servers(callback: CallbackQuery):
     await callback.message.delete()
     await callback.message.answer(text, reply_markup=back_menu())
     await callback.answer()
-
 
 # =======================
 # ПРОФИЛЬ
@@ -145,23 +144,19 @@ async def profile(callback: CallbackQuery):
     await callback.message.answer(text, reply_markup=keyboard)
     await callback.answer()
 
-
 # =======================
-# ПРОМОКОД ВВОД
+# ПРОМОКОДЫ
 # =======================
-
-waiting_promo = {}
 
 @dp.callback_query(F.data == "promo")
 async def promo_enter(callback: CallbackQuery):
     waiting_promo[callback.from_user.id] = True
-
     await callback.message.answer("Введите промокод:")
     await callback.answer()
 
 
 @dp.message()
-async def handle_promo(message: Message):
+async def promo_check(message: Message):
     user_id = message.from_user.id
 
     if not waiting_promo.get(user_id):
@@ -178,39 +173,13 @@ async def handle_promo(message: Message):
             users[user_id]["balance"] += promo["amount"]
             promo["uses_left"] -= 1
 
-            await message.answer(f"✅ Вы получили {promo['amount']}₽!")
+            await message.answer(f"✅ Начислено {promo['amount']}₽ на баланс")
         else:
             await message.answer("❌ Промокод закончился")
     else:
         await message.answer("❌ Неверный промокод")
 
     waiting_promo[user_id] = False
-
-
-# =======================
-# АДМИН ПРОМОКОД
-# =======================
-
-ADMIN_ID = 123456789  # ВСТАВЬ СВОЙ ID
-
-@dp.message(Command("addpromo"))
-async def add_promo(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    try:
-        _, code, amount, uses = message.text.split()
-
-        promo_codes[code.upper()] = {
-            "amount": int(amount),
-            "uses_left": int(uses)
-        }
-
-        await message.answer("✅ Промокод создан")
-
-    except:
-        await message.answer("❌ Формат: /addpromo CODE 300 10")
-
 
 # =======================
 # ПОКУПКА
@@ -228,9 +197,8 @@ async def buy(callback: CallbackQuery):
     )
 
     await callback.message.delete()
-    await callback.message.answer("Выберите тариф:", reply_markup=keyboard)
+    await callback.message.answer("💎 Выберите тариф:", reply_markup=keyboard)
     await callback.answer()
-
 
 # =======================
 # ПОКУПКА С БАЛАНСА
@@ -259,12 +227,9 @@ async def buy_sub(callback: CallbackQuery):
         await callback.message.answer("✅ Подписка активирована!")
     else:
         need = price - balance
-        await callback.message.answer(
-            f"❌ Недостаточно средств.\nНужно доплатить: {need}₽"
-        )
+        await callback.message.answer(f"❌ Нужно доплатить: {need}₽")
 
     await callback.answer()
-
 
 # =======================
 # VPN
@@ -279,14 +244,12 @@ async def vpn(callback: CallbackQuery):
     )
     await callback.answer()
 
-
 # =======================
 # ЗАПУСК
 # =======================
 
 async def main():
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())

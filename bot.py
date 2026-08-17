@@ -10,13 +10,16 @@ from aiogram.types import (
 from aiogram.utils import executor
 
 # =========================
-# 🔐 ПЕРЕМЕННЫЕ ИЗ RAILWAY
+# 🔐 ПЕРЕМЕННЫЕ (RAILWAY)
 # =========================
 TOKEN = os.getenv("BOT_TOKEN")
-DONATE_URL = os.getenv("DONATE_URL", "https://www.donationalerts.com/r/smertelobed0")
+DONATE_URL = os.getenv("DA_URL")
 
 if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден в переменных окружения!")
+    raise Exception("❌ BOT_TOKEN не найден в переменных")
+
+if not DONATE_URL:
+    raise Exception("❌ DA_URL не найден в переменных")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -38,7 +41,7 @@ def main_menu():
 
 
 # =========================
-# 📌 КНОПКА ВНИЗУ
+# 📌 НИЖНЯЯ КНОПКА
 # =========================
 def back_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -47,7 +50,7 @@ def back_menu():
 
 
 # =========================
-# 🚀 СТАРТ
+# 🚀 START
 # =========================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
@@ -81,6 +84,7 @@ async def profile(call: types.CallbackQuery):
     )
 
     await call.message.answer(text, reply_markup=back_menu())
+    await call.answer()
 
 
 # =========================
@@ -94,10 +98,10 @@ async def pay(call: types.CallbackQuery):
     )
 
     await call.message.answer(
-        "💰 Пополнение баланса\n\n"
-        "Перейди по кнопке ниже:",
+        "💰 Пополнение баланса\n\nПерейдите по кнопке:",
         reply_markup=kb
     )
+    await call.answer()
 
 
 # =========================
@@ -119,6 +123,7 @@ async def servers(call: types.CallbackQuery):
 """
 
     await call.message.answer(text, reply_markup=back_menu())
+    await call.answer()
 
 
 # =========================
@@ -130,6 +135,7 @@ async def vpn(call: types.CallbackQuery):
         "🔐 У вас нет активного VPN.\n\nПополните баланс.",
         reply_markup=back_menu()
     )
+    await call.answer()
 
 
 # =========================

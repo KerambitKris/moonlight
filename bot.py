@@ -1,4 +1,5 @@
 import logging
+import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import (
     InlineKeyboardMarkup,
@@ -9,10 +10,13 @@ from aiogram.types import (
 from aiogram.utils import executor
 
 # =========================
-# 🔐 НАСТРОЙКИ
+# 🔐 ПЕРЕМЕННЫЕ ИЗ RAILWAY
 # =========================
-TOKEN = "ТВОЙ_BOT_TOKEN"
-DONATE_URL = "https://www.donationalerts.com/r/smertelobed0"
+TOKEN = os.getenv("BOT_TOKEN")
+DONATE_URL = os.getenv("DONATE_URL", "https://www.donationalerts.com/r/smertelobed0")
+
+if not TOKEN:
+    raise ValueError("❌ BOT_TOKEN не найден в переменных окружения!")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -20,7 +24,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
 # =========================
-# 📌 INLINE МЕНЮ (КАК У КУРА)
+# 📌 INLINE МЕНЮ
 # =========================
 def main_menu():
     kb = InlineKeyboardMarkup(row_width=1)

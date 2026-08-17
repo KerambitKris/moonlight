@@ -1,15 +1,26 @@
 import asyncio
 import os
 import random
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# =======================
+# ДАННЫЕ
+# =======================
+
+users = {}  
+# user_id: {balance, sub_until}
+
+promo_codes = {}  
+# code: {amount, uses_left}
 
 
 # =======================
@@ -43,25 +54,23 @@ def back_menu():
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    text = (
+    await message.answer(
         "🔐 Moonlight VPN\n\n"
         "👋 Добро пожаловать в Moonlight VPN!\n\n"
-        "⚡ Быстрый и стабильный VPN для ваших устройств, вы сможете подключаться ко всем ресурсам в интернете, даже запрещенным.\n\n"
-        "⭐️ Новостной канал — @moonlight_vpn_news\n"
-        "⭐️ Связь и техническая поддержка — @mtfunit\n\n"
-        "👇 Выберите действие:"
+        "⚡ Быстрый и стабильный VPN для ваших устройств.\n\n"
+        "👇 Выберите действие:",
+        reply_markup=main_menu()
     )
-
-    await message.answer(text, reply_markup=main_menu())
 
 
 # =======================
-# ГЛАВНОЕ МЕНЮ
+# ГЛАВНАЯ
 # =======================
 
 @dp.callback_query(F.data == "home")
 async def home(callback: CallbackQuery):
-    await callback.message.edit_text(
+    await callback.message.delete()
+    await callback.message.answer(
         "🔐 Moonlight VPN\n\n👇 Выберите действие:",
         reply_markup=main_menu()
     )
@@ -69,14 +78,12 @@ async def home(callback: CallbackQuery):
 
 
 # =======================
-# ШКАЛА НАГРУЗКИ
+# СЕРВЕРА
 # =======================
 
 def load_bar(percent):
     filled = int(percent / 10)
-    empty = 10 - filled
-
-    bar = "█" * filled + "░" * empty
+    bar = "█" * filled + "░" * (10 - filled)
 
     if percent < 40:
         color = "🟢"
@@ -85,60 +92,21 @@ def load_bar(percent):
     else:
         color = "🔴"
 
-    return f"{color} [{bar}] {percent}%"
+    return f"{color} {percent}%\n[{bar}]"
 
-
-# =======================
-# СЕРВЕРА
-# =======================
 
 @dp.callback_query(F.data == "servers")
 async def servers(callback: CallbackQuery):
-    load = random.randint(15, 90)
+    load = random.randint(10, 100)
 
     text = (
-        "🌍 Здесь вы можете посмотреть доступные сервера и их загруженность чтобы выбрать самый оптимальный сервер.\n\n"
+        "🌍 Доступные сервера:\n\n"
         "🇩🇪 Германия\n"
         f"{load_bar(load)}"
     )
 
-    await callback.message.edit_text(text, reply_markup=back_menu())
-    await callback.answer()
-
-
-# =======================
-# КУПИТЬ
-# =======================
-
-@dp.callback_query(F.data == "buy")
-async def buy(callback: CallbackQuery):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💳 1 месяц — 199₽", callback_data="buy_1")],
-            [InlineKeyboardButton(text="💳 3 месяца — 499₽", callback_data="buy_3")],
-            [InlineKeyboardButton(text="💳 12 месяцев — 1499₽", callback_data="buy_12")],
-            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
-        ]
-    )
-
-    await callback.message.edit_text("💎 Выберите тариф:", reply_markup=keyboard)
-    await callback.answer()
-
-
-# =======================
-# МОЙ VPN
-# =======================
-
-@dp.callback_query(F.data == "vpn")
-async def vpn(callback: CallbackQuery):
-    text = (
-        "🔐 Мой VPN\n\n"
-        "📡 Статус: Не подключён\n"
-        "🌍 Сервер: Германия\n"
-        "💎 Тариф: Бесплатный"
-    )
-
-    await callback.message.edit_text(text, reply_markup=back_menu())
+    await callback.message.delete()
+    await callback.message.answer(text, reply_markup=back_menu())
     await callback.answer()
 
 
@@ -148,15 +116,167 @@ async def vpn(callback: CallbackQuery):
 
 @dp.callback_query(F.data == "profile")
 async def profile(callback: CallbackQuery):
-    user = callback.from_user
+    user_id = callback.from_user.id
+
+    user = users.get(user_id, {"balance": 0, "sub": None})
+
+    balance = user["balance"]
+
+    if user["sub"]:
+        tariff = f"До {user['sub']}"
+    else:
+        tariff = "❌ Нет активной подписки"
 
     text = (
         "👤 Профиль\n\n"
-        f"ID: {user.id}\n"
-        "Тариф: Бесплатный"
+        f"Баланс: {balance}₽\n\n"
+        f"ID: {user_id}\n"
+        f"Тариф: {tariff}"
     )
 
-    await callback.message.edit_text(text, reply_markup=back_menu())
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Ввести промокод", callback_data="promo")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
+        ]
+    )
+
+    await callback.message.delete()
+    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.answer()
+
+
+# =======================
+# ПРОМОКОД ВВОД
+# =======================
+
+waiting_promo = {}
+
+@dp.callback_query(F.data == "promo")
+async def promo_enter(callback: CallbackQuery):
+    waiting_promo[callback.from_user.id] = True
+
+    await callback.message.answer("Введите промокод:")
+    await callback.answer()
+
+
+@dp.message()
+async def handle_promo(message: Message):
+    user_id = message.from_user.id
+
+    if not waiting_promo.get(user_id):
+        return
+
+    code = message.text.upper()
+
+    if code in promo_codes:
+        promo = promo_codes[code]
+
+        if promo["uses_left"] > 0:
+            users.setdefault(user_id, {"balance": 0, "sub": None})
+
+            users[user_id]["balance"] += promo["amount"]
+            promo["uses_left"] -= 1
+
+            await message.answer(f"✅ Вы получили {promo['amount']}₽!")
+        else:
+            await message.answer("❌ Промокод закончился")
+    else:
+        await message.answer("❌ Неверный промокод")
+
+    waiting_promo[user_id] = False
+
+
+# =======================
+# АДМИН ПРОМОКОД
+# =======================
+
+ADMIN_ID = 123456789  # ВСТАВЬ СВОЙ ID
+
+@dp.message(Command("addpromo"))
+async def add_promo(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        _, code, amount, uses = message.text.split()
+
+        promo_codes[code.upper()] = {
+            "amount": int(amount),
+            "uses_left": int(uses)
+        }
+
+        await message.answer("✅ Промокод создан")
+
+    except:
+        await message.answer("❌ Формат: /addpromo CODE 300 10")
+
+
+# =======================
+# ПОКУПКА
+# =======================
+
+@dp.callback_query(F.data == "buy")
+async def buy(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 1 месяц — 199₽", callback_data="sub_1")],
+            [InlineKeyboardButton(text="💳 3 месяца — 499₽", callback_data="sub_3")],
+            [InlineKeyboardButton(text="💳 12 месяцев — 1499₽", callback_data="sub_12")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
+        ]
+    )
+
+    await callback.message.delete()
+    await callback.message.answer("Выберите тариф:", reply_markup=keyboard)
+    await callback.answer()
+
+
+# =======================
+# ПОКУПКА С БАЛАНСА
+# =======================
+
+@dp.callback_query(F.data.startswith("sub_"))
+async def buy_sub(callback: CallbackQuery):
+    user_id = callback.from_user.id
+
+    users.setdefault(user_id, {"balance": 0, "sub": None})
+
+    prices = {
+        "sub_1": (199, 30),
+        "sub_3": (499, 90),
+        "sub_12": (1499, 365)
+    }
+
+    price, days = prices[callback.data]
+    balance = users[user_id]["balance"]
+
+    if balance >= price:
+        users[user_id]["balance"] -= price
+        expire = datetime.now() + timedelta(days=days)
+        users[user_id]["sub"] = expire.strftime("%d.%m.%Y")
+
+        await callback.message.answer("✅ Подписка активирована!")
+    else:
+        need = price - balance
+        await callback.message.answer(
+            f"❌ Недостаточно средств.\nНужно доплатить: {need}₽"
+        )
+
+    await callback.answer()
+
+
+# =======================
+# VPN
+# =======================
+
+@dp.callback_query(F.data == "vpn")
+async def vpn(callback: CallbackQuery):
+    await callback.message.delete()
+    await callback.message.answer(
+        "🔐 VPN пока не активирован\n\nКупите подписку",
+        reply_markup=back_menu()
+    )
     await callback.answer()
 
 

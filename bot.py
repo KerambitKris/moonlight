@@ -1,20 +1,14 @@
 import asyncio
 import os
+import random
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-
 TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
-
-
-# =========================
-# КНОПКИ
-# =========================
-
 def main_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -28,167 +22,98 @@ def main_menu():
     )
 
 
-def back():
+def back_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="home")]
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
         ]
     )
-
-
-def buy_menu():
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="💳 1 месяц — 199 ₽", callback_data="buy_1")],
-            [InlineKeyboardButton(text="💳 3 месяца — 499 ₽", callback_data="buy_3")],
-            [InlineKeyboardButton(text="💳 12 месяцев — 1499 ₽", callback_data="buy_12")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="home")]
-        ]
-    )
-
-
-# =========================
-# START
-# =========================
-
-@dp.message(CommandStart())
+    @dp.message(CommandStart())
 async def start(message: Message):
     text = (
-        "🔐 <b>Moonlight VPN</b>\n\n"
-        "Добро пожаловать в Moonlight VPN!\n\n"
-        "Быстрый и стабильный VPN для ваших устройств, вы сможете подключаться "
-        "ко всем ресурсам в интернете, даже запрещенным.\n\n"
+        "🔐 Moonlight VPN\n\n"
+        "👋 Добро пожаловать в Moonlight VPN!\n\n"
+        "⚡ Быстрый и стабильный VPN для ваших устройств, вы сможете подключаться ко всем ресурсам в интернете, даже запрещенным.\n\n"
         "⭐️ Новостной канал — @moonlight_vpn_news\n"
         "⭐️ Связь и техническая поддержка — @mtfunit\n\n"
-        "Выберите действие:"
+        "👇 Выберите действие:"
     )
 
-    await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
-
-
-# =========================
-# ГЛАВНАЯ
-# =========================
-
-@dp.callback_query(F.data == "home")
+    await message.answer(text, reply_markup=main_menu())
+    @dp.callback_query(F.data == "home")
 async def home(callback: CallbackQuery):
-    await start(callback.message)
+    await callback.message.edit_text(
+        "🔐 Moonlight VPN\n\n👇 Выберите действие:",
+        reply_markup=main_menu()
+    )
+    await callback.answer()
+    def load_bar(percent):
+    filled = int(percent / 10)
+    empty = 10 - filled
+
+    bar = "█" * filled + "░" * empty
+
+    if percent < 40:
+        color = "🟢"
+    elif percent < 70:
+        color = "🟡"
+    else:
+        color = "🔴"
+
+    return f"{color} [{bar}] {percent}%"
+
+
+@dp.callback_query(F.data == "servers")
+async def servers(callback: CallbackQuery):
+    load = random.randint(15, 90)
+    @dp.callback_query(F.data == "buy")
+async def buy(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 1 месяц — 199₽", callback_data="buy_1")],
+            [InlineKeyboardButton(text="💳 3 месяца — 499₽", callback_data="buy_3")],
+            [InlineKeyboardButton(text="💳 12 месяцев — 1499₽", callback_data="buy_12")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
+        ]
+    )
+
+    await callback.message.edit_text("💎 Выберите тариф:", reply_markup=keyboard)
     await callback.answer()
 
+    text = (
+        "🌍 Здесь вы можете посмотреть доступные сервера и их загруженность чтобы выбрать самый оптимальный сервер.\n\n"
+        "🇩🇪 Германия\n"
+        f"{load_bar(load)}"
+    )
 
-# =========================
-# МОЙ VPN
-# =========================
-
-@dp.callback_query(F.data == "vpn")
+    await callback.message.edit_text(text, reply_markup=back_menu())
+    await callback.answer()
+    @dp.callback_query(F.data == "vpn")
 async def vpn(callback: CallbackQuery):
     text = (
-        "🔐 <b>Мой VPN</b>\n\n"
+        "🔐 Мой VPN\n\n"
         "📡 Статус: Не подключён\n"
         "🌍 Сервер: Германия\n"
-        "💎 Тариф: Бесплатный\n\n"
-        "Купите подписку чтобы получить доступ"
+        "💎 Тариф: Бесплатный"
     )
 
-    await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=back_menu())
     await callback.answer()
 
-
-# =========================
-# ПОКУПКА
-# =========================
-
-@dp.callback_query(F.data == "buy")
-async def buy(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💎 Выберите тариф:",
-        reply_markup=buy_menu()
-    )
-    await callback.answer()
-
-
-# =========================
-# ВЫБОР ТАРИФА
-# =========================
-
-@dp.callback_query(F.data.startswith("buy_"))
-async def process_buy(callback: CallbackQuery):
-    prices = {
-        "buy_1": ("1 месяц", 19900),
-        "buy_3": ("3 месяца", 49900),
-        "buy_12": ("12 месяцев", 149900),
-    }
-
-    plan, amount = prices[callback.data]
-
-    await bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title=f"Moonlight VPN — {plan}",
-        description=f"Подписка VPN ({plan})",
-        payload=f"vpn_{plan}",
-        provider_token=os.getenv("PAYMENT_TOKEN"),
-        currency="RUB",
-        prices=[{"label": plan, "amount": amount}],
-        start_parameter="vpn-sub"
-    )
-
-    await callback.answer()
-
-
-# =========================
-# ОБРАБОТКА ОПЛАТЫ
-# =========================
-
-@dp.pre_checkout_query()
-async def process_pre_checkout(pre_checkout_query):
-    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
-
-
-@dp.message(F.successful_payment)
-async def successful_payment(message: Message):
-    await message.answer("✅ Оплата прошла! VPN будет выдан позже (в разработке)")
-
-
-# =========================
-# ПРОФИЛЬ
-# =========================
 
 @dp.callback_query(F.data == "profile")
 async def profile(callback: CallbackQuery):
     user = callback.from_user
 
     text = (
-        "👤 <b>Профиль</b>\n\n"
-        f"ID: <code>{user.id}</code>\n"
+        "👤 Профиль\n\n"
+        f"ID: {user.id}\n"
         "Тариф: Бесплатный"
     )
 
-    await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=back_menu())
     await callback.answer()
-
-
-# =========================
-# СЕРВЕРЫ
-# =========================
-
-@dp.callback_query(F.data == "servers")
-async def servers(callback: CallbackQuery):
-    text = (
-        "🌍 Серверы\n\n"
-        "🇩🇪 Германия\n"
-        "🇳🇱 Нидерланды\n"
-        "🇫🇮 Финляндия"
-    )
-
-    await callback.message.edit_text(text, reply_markup=back())
-    await callback.answer()
-
-
-# =========================
-# ЗАПУСК
-# =========================
-
-async def main():
+    async def main():
     await dp.start_polling(bot)
 
 

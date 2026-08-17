@@ -5,10 +5,17 @@ import random
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+
 TOKEN = os.getenv("BOT_TOKEN")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+
+# =======================
+# КНОПКИ
+# =======================
+
 def main_menu():
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -28,7 +35,13 @@ def back_menu():
             [InlineKeyboardButton(text="⬅️ В меню", callback_data="home")]
         ]
     )
-    @dp.message(CommandStart())
+
+
+# =======================
+# START
+# =======================
+
+@dp.message(CommandStart())
 async def start(message: Message):
     text = (
         "🔐 Moonlight VPN\n\n"
@@ -40,14 +53,26 @@ async def start(message: Message):
     )
 
     await message.answer(text, reply_markup=main_menu())
-    @dp.callback_query(F.data == "home")
+
+
+# =======================
+# ГЛАВНОЕ МЕНЮ
+# =======================
+
+@dp.callback_query(F.data == "home")
 async def home(callback: CallbackQuery):
     await callback.message.edit_text(
         "🔐 Moonlight VPN\n\n👇 Выберите действие:",
         reply_markup=main_menu()
     )
     await callback.answer()
-    def load_bar(percent):
+
+
+# =======================
+# ШКАЛА НАГРУЗКИ
+# =======================
+
+def load_bar(percent):
     filled = int(percent / 10)
     empty = 10 - filled
 
@@ -63,10 +88,29 @@ async def home(callback: CallbackQuery):
     return f"{color} [{bar}] {percent}%"
 
 
+# =======================
+# СЕРВЕРА
+# =======================
+
 @dp.callback_query(F.data == "servers")
 async def servers(callback: CallbackQuery):
     load = random.randint(15, 90)
-    @dp.callback_query(F.data == "buy")
+
+    text = (
+        "🌍 Здесь вы можете посмотреть доступные сервера и их загруженность чтобы выбрать самый оптимальный сервер.\n\n"
+        "🇩🇪 Германия\n"
+        f"{load_bar(load)}"
+    )
+
+    await callback.message.edit_text(text, reply_markup=back_menu())
+    await callback.answer()
+
+
+# =======================
+# КУПИТЬ
+# =======================
+
+@dp.callback_query(F.data == "buy")
 async def buy(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -80,15 +124,12 @@ async def buy(callback: CallbackQuery):
     await callback.message.edit_text("💎 Выберите тариф:", reply_markup=keyboard)
     await callback.answer()
 
-    text = (
-        "🌍 Здесь вы можете посмотреть доступные сервера и их загруженность чтобы выбрать самый оптимальный сервер.\n\n"
-        "🇩🇪 Германия\n"
-        f"{load_bar(load)}"
-    )
 
-    await callback.message.edit_text(text, reply_markup=back_menu())
-    await callback.answer()
-    @dp.callback_query(F.data == "vpn")
+# =======================
+# МОЙ VPN
+# =======================
+
+@dp.callback_query(F.data == "vpn")
 async def vpn(callback: CallbackQuery):
     text = (
         "🔐 Мой VPN\n\n"
@@ -100,6 +141,10 @@ async def vpn(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=back_menu())
     await callback.answer()
 
+
+# =======================
+# ПРОФИЛЬ
+# =======================
 
 @dp.callback_query(F.data == "profile")
 async def profile(callback: CallbackQuery):
@@ -113,7 +158,13 @@ async def profile(callback: CallbackQuery):
 
     await callback.message.edit_text(text, reply_markup=back_menu())
     await callback.answer()
-    async def main():
+
+
+# =======================
+# ЗАПУСК
+# =======================
+
+async def main():
     await dp.start_polling(bot)
 
 

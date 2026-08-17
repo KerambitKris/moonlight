@@ -1,8 +1,7 @@
-import os
 import logging
 import asyncio
-import requests
-
+import os
+import aiohttp
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
@@ -12,144 +11,128 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DA_TOKEN = os.getenv("DA_TOKEN")
 DA_NICK = os.getenv("DA_NICK")
+DA_URL = os.getenv("DA_URL")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(bot)
 
-# ===== БАЗА (простая) =====
 users = {}
-processed_ids = set()
+payments = {}
 
-def get_user(user_id):
+# --- КНОПКИ ---
+def main_menu():
+    return ReplyKeyboardMarkup(resize_keyboard=True).add(
+        KeyboardButton("🏠 Главное меню")
+    )
+
+def inline_main():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("👤 Профиль", callback_data="profile"),
+        InlineKeyboardButton("💰 Пополнить", callback_data="deposit"),
+    )
+    return kb
+
+# --- СТАРТ ---
+@dp.message_handler(commands=["start"])
+async def start(msg: types.Message):
+    user_id = msg.from_user.id
     if user_id not in users:
         users[user_id] = {"balance": 0}
-    return users[user_id]
 
-# ===== REPLY =====
-reply_kb = ReplyKeyboardMarkup(resize_keyboard=True)
-reply_kb.add(KeyboardButton("🏠 Главное меню"))
+    await msg.answer(
+        "🔐 Moonlight VPN\n\nВыберите действие:",
+        reply_markup=inline_main()
+    )
 
-# ===== INLINE =====
-def main_menu():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🔐 Мой VPN", callback_data="vpn"))
-    kb.add(InlineKeyboardButton("👤 Профиль", callback_data="profile"))
-    kb.add(InlineKeyboardButton("💳 Пополнить", callback_data="pay"))
-    kb.add(InlineKeyboardButton("🌍 Серверы", callback_data="servers"))
-    return kb
+# --- ПРОФИЛЬ ---
+@dp.callback_query_handler(lambda c: c.data == "profile")
+async def profile(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    balance = users[user_id]["balance"]
 
-def back():
-    kb = InlineKeyboardMarkup()
-    kb.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
-    return kb
+    text = f"""👤 Профиль
 
-# ===== START =====
-@dp.message_handler(commands=["start"])
-@dp.message_handler(lambda m: m.text == "🏠 Главное меню")
-async def start(msg: types.Message):
-    get_user(msg.from_user.id)
-
-    await msg.answer("🔐 Moonlight VPN", reply_markup=reply_kb)
-    await msg.answer("👇 Меню:", reply_markup=main_menu())
-
-# ===== CALLBACK =====
-@dp.callback_query_handler(lambda c: True)
-async def cb(call: types.CallbackQuery):
-
-    if call.data == "menu":
-        await call.message.edit_text("👇 Меню:", reply_markup=main_menu())
-
-    elif call.data == "profile":
-        u = get_user(call.from_user.id)
-
-        await call.message.edit_text(
-f"""👤 Профиль
-
-Баланс: {u['balance']}₽
+Баланс: {balance}₽
 Тариф: ❌ Нет активной подписки
-ID: {call.from_user.id}""",
-            reply_markup=back()
-        )
+ID: {user_id}
+"""
 
-    elif call.data == "servers":
-        await call.message.edit_text(
-"""🌍 Серверы
+    await call.message.edit_text(text, reply_markup=inline_main())
 
-⚡ Автовыбор (обычные VPN)
+# --- ПОПОЛНЕНИЕ ---
+@dp.callback_query_handler(lambda c: c.data == "deposit")
+async def deposit(call: types.CallbackQuery):
+    await call.message.answer("💰 Введите сумму пополнения:")
+    await Deposit.waiting.set()
 
-🇰🇿 Казахстан
-🇷🇺 Россия
-🇳🇱 Нидерланды
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
 
-──────────────
+dp.storage = MemoryStorage()
 
-⚡ Автовыбор (обход блокировок)
+class Deposit(StatesGroup):
+    waiting = State()
 
-🇩🇪 Обход 1 — Германия
-🇩🇪 Обход 2 — Германия
-🇩🇪 Обход 3 — Германия
-""",
-            reply_markup=back()
-        )
+@dp.message_handler(state=Deposit.waiting)
+async def process_amount(msg: types.Message, state: FSMContext):
+    try:
+        amount = int(msg.text)
+        if amount < 1:
+            raise ValueError
+    except:
+        return await msg.answer("❌ Введите нормальную сумму")
 
-    elif call.data == "vpn":
-        await call.message.edit_text(
-            "🔐 VPN появится позже",
-            reply_markup=back()
-        )
+    user_id = msg.from_user.id
+    payments[user_id] = amount
 
-    elif call.data == "pay":
-        user_id = call.from_user.id
+    pay_url = f"{DA_URL}?amount={amount}"
 
-        # 🔥 ВАЖНО — автоматизация
-        pay_url = f"https://www.donationalerts.com/r/{DA_NICK}?message={user_id}"
+    kb = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("💳 Оплатить", url=pay_url),
+        InlineKeyboardButton("🔄 Проверить оплату", callback_data="check_pay")
+    )
 
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("💳 Оплатить", url=pay_url))
-        kb.add(InlineKeyboardButton("🏠 В меню", callback_data="menu"))
+    await msg.answer(
+        f"💸 К оплате: {amount}₽\n\nПосле оплаты нажми 'Проверить оплату'",
+        reply_markup=kb
+    )
 
-        await call.message.edit_text(
-            "💳 Оплата\n\nНажмите кнопку ниже:",
-            reply_markup=kb
-        )
+    await state.finish()
 
-    await call.answer()
+# --- ПРОВЕРКА ОПЛАТЫ ---
+async def check_donations():
+    url = "https://www.donationalerts.com/api/v1/alerts/donations"
+    headers = {"Authorization": f"Bearer {DA_TOKEN}"}
 
-# ===== АВТО ДОНАТЫ =====
-async def check_donates():
-    while True:
-        try:
-            r = requests.get(
-                "https://www.donationalerts.com/api/v1/alerts/donations",
-                headers={"Authorization": f"Bearer {DA_TOKEN}"}
-            ).json()
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            data = await resp.json()
+            return data["data"]
 
-            for d in r["data"]:
-                if d["id"] in processed_ids:
-                    continue
+@dp.callback_query_handler(lambda c: c.data == "check_pay")
+async def check_payment(call: types.CallbackQuery):
+    user_id = call.from_user.id
 
-                processed_ids.add(d["id"])
+    if user_id not in payments:
+        return await call.answer("❌ Нет ожидаемых платежей")
 
-                try:
-                    user_id = int(d["message"])  # 🔥 берём из message
-                except:
-                    continue
+    amount = payments[user_id]
+    donations = await check_donations()
 
-                amount = int(float(d["amount"]))
+    for d in donations:
+        # ВАЖНО: тут мы ищем сумму
+        if int(float(d["amount"])) == amount:
+            users[user_id]["balance"] += amount
+            del payments[user_id]
 
-                u = get_user(user_id)
-                u["balance"] += amount
+            return await call.message.answer(
+                f"✅ Оплата подтверждена!\nБаланс: {users[user_id]['balance']}₽"
+            )
 
-                await bot.send_message(user_id, f"💰 +{amount}₽ зачислено")
+    await call.answer("❌ Платёж не найден", show_alert=True)
 
-        except Exception as e:
-            print("Ошибка:", e)
-
-        await asyncio.sleep(10)
-
-# ===== RUN =====
-async def on_startup(_):
-    asyncio.create_task(check_donates())
-
+# --- ЗАПУСК ---
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+    executor.start_polling(dp, skip_updates=True)

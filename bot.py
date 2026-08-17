@@ -1,8 +1,16 @@
 import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 from aiogram.utils import executor
 
+# =========================
+# 🔐 НАСТРОЙКИ
+# =========================
 TOKEN = "ТВОЙ_BOT_TOKEN"
 DONATE_URL = "https://www.donationalerts.com/r/smertelobed0"
 
@@ -11,9 +19,9 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-# -------------------------
-# 📌 ГЛАВНОЕ МЕНЮ (INLINE)
-# -------------------------
+# =========================
+# 📌 INLINE МЕНЮ (КАК У КУРА)
+# =========================
 def main_menu():
     kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
@@ -24,66 +32,73 @@ def main_menu():
     )
     return kb
 
-# -------------------------
-# 📌 КНОПКА НАЗАД (REPLY)
-# -------------------------
+
+# =========================
+# 📌 КНОПКА ВНИЗУ
+# =========================
 def back_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
     kb.add(KeyboardButton("🏠 В меню"))
     return kb
 
-# -------------------------
-# 🚀 START
-# -------------------------
-@dp.message_handler(commands=['start'])
-async def start(msg: types.Message):
-    await msg.answer(
+
+# =========================
+# 🚀 СТАРТ
+# =========================
+@dp.message_handler(commands=["start"])
+async def start(message: types.Message):
+    await message.answer(
         "🔐 Moonlight VPN\n\nВыберите действие:",
         reply_markup=main_menu()
     )
 
-# -------------------------
+
+# =========================
 # 🏠 В МЕНЮ
-# -------------------------
-@dp.message_handler(lambda msg: msg.text == "🏠 В меню")
-async def back(msg: types.Message):
-    await msg.answer(
+# =========================
+@dp.message_handler(lambda m: m.text == "🏠 В меню")
+async def back_to_menu(message: types.Message):
+    await message.answer(
         "🏠 Главное меню:",
         reply_markup=main_menu()
     )
 
-# -------------------------
+
+# =========================
 # 👤 ПРОФИЛЬ
-# -------------------------
+# =========================
 @dp.callback_query_handler(lambda c: c.data == "profile")
 async def profile(call: types.CallbackQuery):
-    await call.message.answer(
-        f"👤 Профиль\n\n"
-        f"Баланс: 0₽\n"
-        f"Тариф: ❌ Нет активной подписки\n"
-        f"ID: {call.from_user.id}",
-        reply_markup=back_menu()
+    text = (
+        "👤 Профиль\n\n"
+        "Баланс: 0₽\n"
+        "Тариф: ❌ Нет активной подписки\n"
+        f"ID: {call.from_user.id}"
     )
 
-# -------------------------
+    await call.message.answer(text, reply_markup=back_menu())
+
+
+# =========================
 # 💰 ОПЛАТА
-# -------------------------
+# =========================
 @dp.callback_query_handler(lambda c: c.data == "pay")
 async def pay(call: types.CallbackQuery):
-    kb = InlineKeyboardMarkup()
+    kb = InlineKeyboardMarkup(row_width=1)
     kb.add(
         InlineKeyboardButton("💳 Оплатить", url=DONATE_URL)
     )
 
     await call.message.answer(
         "💰 Пополнение баланса\n\n"
-        "Нажми кнопку ниже для оплаты:",
+        "Перейди по кнопке ниже:",
         reply_markup=kb
     )
 
-# -------------------------
+
+# =========================
 # 🌍 СЕРВЕРЫ
-# -------------------------
+# =========================
 @dp.callback_query_handler(lambda c: c.data == "servers")
 async def servers(call: types.CallbackQuery):
     text = """⚡ Автовыбор (обычные VPN)
@@ -98,20 +113,23 @@ async def servers(call: types.CallbackQuery):
 🇩🇪 Обход 2 — Германия
 🇩🇪 Обход 3 — Германия
 """
+
     await call.message.answer(text, reply_markup=back_menu())
 
-# -------------------------
+
+# =========================
 # 🔐 МОЙ VPN
-# -------------------------
+# =========================
 @dp.callback_query_handler(lambda c: c.data == "vpn")
 async def vpn(call: types.CallbackQuery):
     await call.message.answer(
-        "🔐 У тебя нет активного VPN.\n\nПополни баланс для покупки.",
+        "🔐 У вас нет активного VPN.\n\nПополните баланс.",
         reply_markup=back_menu()
     )
 
-# -------------------------
+
+# =========================
 # 🚀 ЗАПУСК
-# -------------------------
+# =========================
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)

@@ -10,8 +10,9 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
+
 # =========================
-# КЛАВИАТУРЫ
+# КНОПКИ
 # =========================
 
 def main_menu():
@@ -19,11 +20,10 @@ def main_menu():
         inline_keyboard=[
             [InlineKeyboardButton(text="🔐 Мой VPN", callback_data="vpn")],
             [
-                InlineKeyboardButton(text="💎 Тарифы", callback_data="plans"),
+                InlineKeyboardButton(text="💎 Купить", callback_data="buy"),
                 InlineKeyboardButton(text="👤 Профиль", callback_data="profile"),
             ],
             [InlineKeyboardButton(text="🌍 Серверы", callback_data="servers")],
-            [InlineKeyboardButton(text="📖 Помощь", callback_data="help")],
         ]
     )
 
@@ -36,8 +36,19 @@ def back():
     )
 
 
+def buy_menu():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💳 1 месяц — 199 ₽", callback_data="buy_1")],
+            [InlineKeyboardButton(text="💳 3 месяца — 499 ₽", callback_data="buy_3")],
+            [InlineKeyboardButton(text="💳 12 месяцев — 1499 ₽", callback_data="buy_12")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="home")]
+        ]
+    )
+
+
 # =========================
-# /start
+# START
 # =========================
 
 @dp.message(CommandStart())
@@ -45,12 +56,10 @@ async def start(message: Message):
     text = (
         "🔐 <b>Moonlight VPN</b>\n\n"
         "Добро пожаловать в Moonlight VPN!\n\n"
-        "Быстрый и стабильный VPN для ваших устройств, "
-        "вы сможете подключаться ко всем ресурсам в интернете, "
-        "даже запрещенным.\n\n"
+        "Быстрый и стабильный VPN для ваших устройств, вы сможете подключаться "
+        "ко всем ресурсам в интернете, даже запрещенным.\n\n"
         "⭐️ Новостной канал — @moonlight_vpn_news\n"
         "⭐️ Связь и техническая поддержка — @mtfunit\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
         "Выберите действие:"
     )
 
@@ -58,7 +67,7 @@ async def start(message: Message):
 
 
 # =========================
-# ГЛАВНОЕ МЕНЮ
+# ГЛАВНАЯ
 # =========================
 
 @dp.callback_query(F.data == "home")
@@ -75,12 +84,10 @@ async def home(callback: CallbackQuery):
 async def vpn(callback: CallbackQuery):
     text = (
         "🔐 <b>Мой VPN</b>\n\n"
-        "📡 Статус: ⚪ Не подключён\n"
-        "🌍 Сервер: 🇩🇪 Германия\n"
+        "📡 Статус: Не подключён\n"
+        "🌍 Сервер: Германия\n"
         "💎 Тариф: Бесплатный\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "VPN пока не активирован.\n"
-        "Купите подписку, чтобы получить доступ."
+        "Купите подписку чтобы получить доступ"
     )
 
     await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
@@ -88,22 +95,58 @@ async def vpn(callback: CallbackQuery):
 
 
 # =========================
-# ТАРИФЫ
+# ПОКУПКА
 # =========================
 
-@dp.callback_query(F.data == "plans")
-async def plans(callback: CallbackQuery):
-    text = (
-        "💎 <b>Тарифы</b>\n\n"
-        "1 месяц — 199 ₽\n"
-        "3 месяца — 499 ₽\n"
-        "12 месяцев — 1499 ₽\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "🚧 Оплата пока в разработке"
+@dp.callback_query(F.data == "buy")
+async def buy(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "💎 Выберите тариф:",
+        reply_markup=buy_menu()
+    )
+    await callback.answer()
+
+
+# =========================
+# ВЫБОР ТАРИФА
+# =========================
+
+@dp.callback_query(F.data.startswith("buy_"))
+async def process_buy(callback: CallbackQuery):
+    prices = {
+        "buy_1": ("1 месяц", 19900),
+        "buy_3": ("3 месяца", 49900),
+        "buy_12": ("12 месяцев", 149900),
+    }
+
+    plan, amount = prices[callback.data]
+
+    await bot.send_invoice(
+        chat_id=callback.from_user.id,
+        title=f"Moonlight VPN — {plan}",
+        description=f"Подписка VPN ({plan})",
+        payload=f"vpn_{plan}",
+        provider_token=os.getenv("PAYMENT_TOKEN"),
+        currency="RUB",
+        prices=[{"label": plan, "amount": amount}],
+        start_parameter="vpn-sub"
     )
 
-    await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
     await callback.answer()
+
+
+# =========================
+# ОБРАБОТКА ОПЛАТЫ
+# =========================
+
+@dp.pre_checkout_query()
+async def process_pre_checkout(pre_checkout_query):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+
+@dp.message(F.successful_payment)
+async def successful_payment(message: Message):
+    await message.answer("✅ Оплата прошла! VPN будет выдан позже (в разработке)")
 
 
 # =========================
@@ -116,11 +159,8 @@ async def profile(callback: CallbackQuery):
 
     text = (
         "👤 <b>Профиль</b>\n\n"
-        f"ID: <code>{user.id}</code>\n\n"
-        "💎 Тариф: Бесплатный\n"
-        "📅 Доступ: —\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"Имя: {user.first_name}"
+        f"ID: <code>{user.id}</code>\n"
+        "Тариф: Бесплатный"
     )
 
     await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
@@ -134,34 +174,13 @@ async def profile(callback: CallbackQuery):
 @dp.callback_query(F.data == "servers")
 async def servers(callback: CallbackQuery):
     text = (
-        "🌍 <b>Серверы</b>\n\n"
-        "🇩🇪 Германия — 🟢 низкая нагрузка\n"
-        "🇳🇱 Нидерланды — 🟢 низкая нагрузка\n"
-        "🇫🇮 Финляндия — 🟡 средняя нагрузка\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "Выбор сервера будет доступен после покупки."
+        "🌍 Серверы\n\n"
+        "🇩🇪 Германия\n"
+        "🇳🇱 Нидерланды\n"
+        "🇫🇮 Финляндия"
     )
 
-    await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
-    await callback.answer()
-
-
-# =========================
-# ПОМОЩЬ
-# =========================
-
-@dp.callback_query(F.data == "help")
-async def help_menu(callback: CallbackQuery):
-    text = (
-        "📖 <b>Помощь</b>\n\n"
-        "1. Установите WireGuard\n"
-        "2. Получите конфигурацию\n"
-        "3. Подключитесь\n\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "🚧 Инструкции скоро появятся"
-    )
-
-    await callback.message.edit_text(text, reply_markup=back(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=back())
     await callback.answer()
 
 
@@ -170,7 +189,6 @@ async def help_menu(callback: CallbackQuery):
 # =========================
 
 async def main():
-    print("Bot started")
     await dp.start_polling(bot)
 
 

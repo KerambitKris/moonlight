@@ -179,4 +179,4 @@ async def on_startup(_):
     asyncio.create_task(check_donates())
 
 if __name__ == "__main__":
-    executor.start_polling(dp,
+    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)

@@ -5,9 +5,10 @@ import aiohttp
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
+# ===== НАСТРОЙКИ =====
 TOKEN = os.getenv("BOT_TOKEN")
 PANEL_URL = os.getenv("PANEL_URL")
 PANEL_LOGIN = os.getenv("PANEL_LOGIN")
@@ -22,28 +23,44 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
+# ===== ТАРИФЫ =====
 TARIFFS = {
     "5": {"days": 5, "price": 19},
     "14": {"days": 14, "price": 49},
     "30": {"days": 30, "price": 99},
-    "60": {"days": 60, "price": 189},
-    "90": {"days": 90, "price": 249},
-    "180": {"days": 180, "price": 439},
-    "365": {"days": 365, "price": 799},
 }
 
+# ===== ПРОМОКОДЫ (РЕДАКТИРУЕШЬ ТУТ) =====
 promo_codes = {
-    "MEOW": {"amount": 30, "uses": 5},
-    "VIP": {"amount": 100, "uses": 3},
+    "FREE30": {"amount": 30, "uses": 5},
+    "VIP100": {"amount": 100, "uses": 2},
 }
 
+# ===== ДАННЫЕ =====
 users_balance = {}
 users_vpn = {}
 waiting_promo = set()
 
 panel_cookie = None
 
+# ===== МЕНЮ (КАК У KYRA) =====
+def main_menu():
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
+    kb.row(KeyboardButton("🚀 Подключиться"))
+    kb.row(
+        KeyboardButton("💳 Купить/Продлить"),
+        KeyboardButton("📱 Мои устройства")
+    )
+    kb.row(
+        KeyboardButton("🎁 Промокод"),
+        KeyboardButton("💰 Баланс")
+    )
+    kb.row(KeyboardButton("🆘 Помощь"))
+
+    return kb
+
+# ===== ПАНЕЛЬ =====
 async def panel_login():
     global panel_cookie
     async with aiohttp.ClientSession() as session:
@@ -52,7 +69,6 @@ async def panel_login():
             data={"username": PANEL_LOGIN, "password": PANEL_PASSWORD}
         ) as resp:
             panel_cookie = resp.cookies
-
 
 async def create_vpn(user_id, days):
     global panel_cookie
@@ -70,8 +86,6 @@ async def create_vpn(user_id, days):
                 {
                     "id": client_id,
                     "email": str(user_id),
-                    "limitIp": 2,
-                    "totalGB": 0,
                     "expiryTime": expiry,
                     "enable": True
                 }
@@ -90,74 +104,60 @@ async def create_vpn(user_id, days):
 
     return f"{PANEL_URL}/sub/{client_id}"
 
-
-def main_menu():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton("Мой VPN", callback_data="vpn"),
-        InlineKeyboardButton("Купить", callback_data="buy"),
-        InlineKeyboardButton("Промокод", callback_data="promo"),
-        InlineKeyboardButton("Баланс", callback_data="balance"),
-    )
-    return kb
-
-
+# ===== КОМАНДЫ =====
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     uid = msg.from_user.id
     users_balance.setdefault(uid, 0)
 
     await msg.answer(
-        f"Баланс: {users_balance[uid]} ₽",
+        "Добро пожаловать в VPN\n\n💰 Баланс: {} ₽".format(users_balance[uid]),
         reply_markup=main_menu()
     )
 
+# ===== КНОПКИ =====
+@dp.message_handler(lambda m: m.text == "💰 Баланс")
+async def balance(msg: types.Message):
+    uid = msg.from_user.id
+    await msg.answer(f"Баланс: {users_balance.get(uid, 0)} ₽")
 
-@dp.callback_query_handler(lambda c: c.data == "balance")
-async def balance(call: types.CallbackQuery):
-    uid = call.from_user.id
-    await call.message.answer(
-        f"Баланс: {users_balance.get(uid, 0)} ₽",
-        reply_markup=main_menu()
-    )
+@dp.message_handler(lambda m: m.text == "🎁 Промокод")
+async def promo(msg: types.Message):
+    waiting_promo.add(msg.from_user.id)
+    await msg.answer("Введи промокод:")
 
+@dp.message_handler(lambda m: m.text == "🚀 Подключиться")
+async def connect(msg: types.Message):
+    uid = msg.from_user.id
 
-@dp.callback_query_handler(lambda c: c.data == "vpn")
-async def vpn(call: types.CallbackQuery):
-    uid = call.from_user.id
+    if uid not in users_vpn:
+        await msg.answer("У тебя нет VPN")
+        return
 
-    if uid in users_vpn:
-        vpn = users_vpn[uid]
-        text = f"Активен до {vpn['expire'].strftime('%d.%m.%Y')}\n{vpn['key']}"
-    else:
-        text = "У тебя нет VPN"
+    vpn = users_vpn[uid]
+    await msg.answer(f"Твой ключ:\n{vpn['key']}")
 
-    await call.message.answer(text, reply_markup=main_menu())
+@dp.message_handler(lambda m: m.text == "💳 Купить/Продлить")
+async def buy(msg: types.Message):
+    text = "Выбери тариф:\n\n"
+    for k, t in TARIFFS.items():
+        text += f"{t['days']} дней - {t['price']} ₽\n"
 
+    await msg.answer(text)
+    await msg.answer("Напиши число дней (например 30)")
 
-@dp.callback_query_handler(lambda c: c.data == "buy")
-async def buy(call: types.CallbackQuery):
-    kb = InlineKeyboardMarkup(row_width=2)
+@dp.message_handler(lambda m: m.text.isdigit())
+async def process_buy(msg: types.Message):
+    uid = msg.from_user.id
+    plan = msg.text
 
-    for key, t in TARIFFS.items():
-        kb.insert(
-            InlineKeyboardButton(
-                f"{t['days']}д - {t['price']}₽",
-                callback_data=f"buy_{key}"
-            )
-        )
+    if plan not in TARIFFS:
+        return
 
-    await call.message.answer("Выбери тариф:", reply_markup=kb)
-
-
-@dp.callback_query_handler(lambda c: c.data.startswith("buy_"))
-async def process_buy(call: types.CallbackQuery):
-    uid = call.from_user.id
-    plan = call.data.split("_")[1]
     tariff = TARIFFS[plan]
 
     if users_balance.get(uid, 0) < tariff["price"]:
-        await call.message.answer("Недостаточно средств", reply_markup=main_menu())
+        await msg.answer("Недостаточно средств")
         return
 
     users_balance[uid] -= tariff["price"]
@@ -171,15 +171,17 @@ async def process_buy(call: types.CallbackQuery):
     else:
         users_vpn[uid]["expire"] += timedelta(days=tariff["days"])
 
-    await call.message.answer("VPN активирован", reply_markup=main_menu())
+    await msg.answer("VPN активирован")
 
+@dp.message_handler(lambda m: m.text == "📱 Мои устройства")
+async def devices(msg: types.Message):
+    await msg.answer("Функция пока не реализована")
 
-@dp.callback_query_handler(lambda c: c.data == "promo")
-async def promo(call: types.CallbackQuery):
-    waiting_promo.add(call.from_user.id)
-    await call.message.answer("Введи промокод:")
+@dp.message_handler(lambda m: m.text == "🆘 Помощь")
+async def help_cmd(msg: types.Message):
+    await msg.answer("Напиши администратору")
 
-
+# ===== ВВОД ПРОМО =====
 @dp.message_handler()
 async def enter_promo(msg: types.Message):
     uid = msg.from_user.id
@@ -196,16 +198,13 @@ async def enter_promo(msg: types.Message):
         users_balance[uid] = users_balance.get(uid, 0) + promo["amount"]
         promo["uses"] -= 1
 
-        await msg.answer(
-            f"+{promo['amount']} ₽ начислено",
-            reply_markup=main_menu()
-        )
+        await msg.answer(f"+{promo['amount']} ₽ начислено")
 
         if promo["uses"] <= 0:
             del promo_codes[code]
     else:
-        await msg.answer("Неверный промокод", reply_markup=main_menu())
+        await msg.answer("Неверный промокод")
 
-
+# ===== ЗАПУСК =====
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)

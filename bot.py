@@ -4,19 +4,29 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
+from flask import Flask, request
+
 # =========================
-# 🔐 ПЕРЕМЕННЫЕ (Railway)
+# 🔐 ENV
 # =========================
 TOKEN = os.getenv("BOT_TOKEN")
-DONATE_URL = os.getenv("DONATE_URL")
+DONATE_SECRET = os.getenv("DONATE_SECRET")
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
+app = Flask(__name__)
+
 # =========================
-# 🔥 БОЛЬШОЕ МЕНЮ (как Kyra)
+# 💾 ФЕЙК БД (потом заменим)
+# =========================
+users_balance = {}
+users_vpn = {}
+
+# =========================
+# 🔘 МЕНЮ
 # =========================
 def main_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -26,8 +36,7 @@ def main_menu():
         KeyboardButton("📱 Мои устройства")
     )
     kb.row(
-        KeyboardButton("🔗 Рефералы"),
-        KeyboardButton("🌐 Web кабинет")
+        KeyboardButton("🔗 Рефералы")
     )
     kb.row(
         KeyboardButton("🚀 Подключиться к VPN")
@@ -35,20 +44,23 @@ def main_menu():
     kb.row(
         KeyboardButton("🆘 Помощь")
     )
-    kb.row(
-        KeyboardButton("🎟 Ввести промокод")
-    )
 
     return kb
 
 
 # =========================
-# 🚀 СТАРТ
+# 🚀 START
 # =========================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
+    uid = message.from_user.id
+
+    if uid not in users_balance:
+        users_balance[uid] = 0
+
     await message.answer(
-        "🔐 Moonlight VPN\n\nДобро пожаловать 👇",
+        f"🔐 Moonlight VPN\n\n"
+        f"💰 Баланс: {users_balance[uid]}₽",
         reply_markup=main_menu()
     )
 
@@ -58,45 +70,14 @@ async def start(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "💳 Купить/Продлить")
 async def buy(message: types.Message):
-    await message.answer(
-        f"💳 Оплата\n\nПерейди по ссылке:\n{DONATE_URL}",
-        reply_markup=main_menu()
-    )
+    uid = message.from_user.id
 
-
-# =========================
-# 📱 УСТРОЙСТВА
-# =========================
-@dp.message_handler(lambda m: m.text == "📱 Мои устройства")
-async def devices(message: types.Message):
-    await message.answer(
-        "📱 Устройства\n\nУ вас пока нет подключённых устройств",
-        reply_markup=main_menu()
-    )
-
-
-# =========================
-# 🔗 РЕФЕРАЛЫ
-# =========================
-@dp.message_handler(lambda m: m.text == "🔗 Рефералы")
-async def refs(message: types.Message):
-    ref_link = f"https://t.me/{(await bot.get_me()).username}?start={message.from_user.id}"
+    link = f"https://www.donationalerts.com/r/smertelobed0?comment={uid}"
 
     await message.answer(
-        f"👥 Реферальная программа\n\n"
-        f"Ваша ссылка:\n{ref_link}\n\n"
-        f"Доход: 0₽",
-        reply_markup=main_menu()
-    )
-
-
-# =========================
-# 🌐 WEB
-# =========================
-@dp.message_handler(lambda m: m.text == "🌐 Web кабинет")
-async def web(message: types.Message):
-    await message.answer(
-        "🌐 Кабинет:\nhttps://client.disavi.store/",
+        f"💳 Оплата\n\n"
+        f"⚠️ ВАЖНО: не меняй комментарий!\n\n"
+        f"{link}",
         reply_markup=main_menu()
     )
 
@@ -106,8 +87,35 @@ async def web(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🚀 Подключиться к VPN")
 async def vpn(message: types.Message):
+    uid = message.from_user.id
+
+    if uid not in users_vpn:
+        await message.answer("❌ Нет подписки", reply_markup=main_menu())
+        return
+
     await message.answer(
-        "🚀 У вас нет активной подписки\n\nСначала пополните баланс",
+        f"🔑 Твой VPN:\n{users_vpn[uid]}",
+        reply_markup=main_menu()
+    )
+
+
+# =========================
+# 📱 УСТРОЙСТВА
+# =========================
+@dp.message_handler(lambda m: m.text == "📱 Мои устройства")
+async def devices(message: types.Message):
+    await message.answer("📱 Пока пусто", reply_markup=main_menu())
+
+
+# =========================
+# 🔗 РЕФЕРАЛЫ
+# =========================
+@dp.message_handler(lambda m: m.text == "🔗 Рефералы")
+async def refs(message: types.Message):
+    link = f"https://t.me/{(await bot.get_me()).username}?start={message.from_user.id}"
+
+    await message.answer(
+        f"🔗 Твоя ссылка:\n{link}",
         reply_markup=main_menu()
     )
 
@@ -117,28 +125,59 @@ async def vpn(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🆘 Помощь")
 async def help_cmd(message: types.Message):
-    await message.answer(
-        "🆘 Поддержка: @your_support",
-        reply_markup=main_menu()
-    )
+    await message.answer("🆘 @support", reply_markup=main_menu())
 
 
 # =========================
-# 🎟 ПРОМОКОД
+# 💸 WEBHOOK (СЕРДЦЕ СИСТЕМЫ)
 # =========================
-@dp.message_handler(lambda m: m.text == "🎟 Ввести промокод")
-async def promo(message: types.Message):
-    await message.answer(
-        "Введите промокод:",
-        reply_markup=main_menu()
-    )
+@app.route("/donate", methods=["POST"])
+def donate():
+    data = request.json
+
+    if not data:
+        return "no data", 400
+
+    # защита
+    if data.get("token") != DONATE_SECRET:
+        return "bad token", 403
+
+    amount = int(data["amount"])
+    comment = data.get("message", "")
+
+    try:
+        user_id = int(comment)
+    except:
+        return "no user id", 400
+
+    # начисляем баланс
+    users_balance[user_id] = users_balance.get(user_id, 0) + amount
+
+    # выдаём VPN (фейк)
+    users_vpn[user_id] = f"https://vpn-link/{user_id}"
+
+    # уведомляем пользователя
+    import asyncio
+    asyncio.run(send_payment(user_id, amount))
+
+    return "ok"
+
+
+async def send_payment(user_id, amount):
+    try:
+        await bot.send_message(
+            user_id,
+            f"✅ Оплата получена: {amount}₽\n\n🔑 VPN выдан"
+        )
+    except:
+        pass
 
 
 # =========================
 # 🚀 ЗАПУСК
 # =========================
 if __name__ == "__main__":
-    if not TOKEN:
-        raise ValueError("❌ BOT_TOKEN не найден в переменных Railway")
+    import threading
 
+    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080)).start()
     executor.start_polling(dp, skip_updates=True)

@@ -32,7 +32,6 @@ TARIFFS = {
 "365": {"days": 365, "price": 799},
 }
 
-
 promo_codes = {
 "MEOW": {"amount": 30, "uses": 1},
 "VIP100": {"amount": 100, "uses": 5},
@@ -105,7 +104,7 @@ users_balance.setdefault(uid, 0)
 
 await msg.answer(
     f"Баланс: {users_balance[uid]}₽",
-    reply_markup=main_menu()  # 👉 кнопки под сообщением бота
+    reply_markup=main_menu()
 )
 
 @dp.callback_query_handler(lambda c: c.data == "vpn")

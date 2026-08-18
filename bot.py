@@ -1,26 +1,13 @@
-=========================================
-
- MOONLIGHT VPN BOT (FIXED & WORKING)
-
-=========================================
-
 import os
 import uuid
 import logging
 import aiohttp
-from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
-from aiohttp import web
 
-=========================
-
- ENV
-
-=========================
-
+# ENV
 TOKEN = os.getenv("BOT_TOKEN")
 PANEL_URL = os.getenv("PANEL_URL")
 PANEL_LOGIN = os.getenv("PANEL_LOGIN")
@@ -28,244 +15,115 @@ PANEL_PASSWORD = os.getenv("PANEL_PASSWORD")
 INBOUND_ID = int(os.getenv("INBOUND_ID", 1))
 
 if not TOKEN:
-raise Exception("❌ BOT_TOKEN не найден")
+    raise Exception("BOT_TOKEN not found")
 
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
-=========================
-
- ТАРИФЫ
-
-=========================
-
+# ТАРИФЫ
 TARIFFS = {
-"5": {"days": 5, "price": 19},
-"14": {"days": 14, "price": 49},
-"30": {"days": 30, "price": 99},
-"60": {"days": 60, "price": 189},
-"90": {"days": 90, "price": 249},
-"180": {"days": 180, "price": 439},
-"365": {"days": 365, "price": 799},
+    "5": {"days": 5, "price": 19},
+    "14": {"days": 14, "price": 49},
+    "30": {"days": 30, "price": 99},
+    "60": {"days": 60, "price": 189},
+    "90": {"days": 90, "price": 249},
+    "180": {"days": 180, "price": 439},
+    "365": {"days": 365, "price": 799},
 }
 
-=========================
-
- ПАМЯТЬ (потом заменишь на БД)
-
-=========================
-
+# ДАННЫЕ
 users_balance = {}
 users_vpn = {}
-
-=========================
-
- ПАНЕЛЬ LOGIN
-
-=========================
-
-panel_cookie = None
-
-async def panel_login():
-global panel_cookie
-async with aiohttp.ClientSession() as session:
-async with session.post(
-f"{PANEL_URL}/login",
-data={"username": PANEL_LOGIN, "password": PANEL_PASSWORD}
-) as resp:
-panel_cookie = resp.cookies
-
-=========================
-
- СОЗДАНИЕ VPN
-
-=========================
-
-async def create_vpn(user_id):
-global panel_cookie
-
-if not panel_cookie:
-    await panel_login()
-
-client_id = str(uuid.uuid4())
-
-payload = {
-    "id": INBOUND_ID,
-    "settings": {
-        "clients": [
-            {
-                "id": client_id,
-                "email": str(user_id),
-                "limitIp": 2,
-                "totalGB": 0,
-                "expiryTime": 0,
-                "enable": True
-            }
-        ]
-    }
+promo_codes = {
+    "FREE30": 30,
+    "BONUS50": 50
 }
 
-async with aiohttp.ClientSession(cookies=panel_cookie) as session:
-    async with session.post(
-        f"{PANEL_URL}/panel/api/inbounds/addClient",
-        json=payload
-    ) as resp:
-        data = await resp.json()
-
-        if not data.get("success"):
-            raise Exception("❌ Панель не приняла клиента")
-
-return f"{PANEL_URL}/sub/{client_id}"
-
-=========================
-
- МЕНЮ
-
-=========================
-
+# МЕНЮ
 def main_menu():
-kb = InlineKeyboardMarkup(row_width=1)
-kb.add(
-InlineKeyboardButton("🚀 Мой VPN", callback_data="vpn"),
-InlineKeyboardButton("💰 Купить", callback_data="pay"),
-InlineKeyboardButton("📱 Устройства", callback_data="devices"),
-InlineKeyboardButton("🆘 Помощь", callback_data="help"),
-)
-return kb
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("🚀 VPN", callback_data="vpn"),
+        InlineKeyboardButton("💰 Купить", callback_data="buy"),
+        InlineKeyboardButton("🎁 Промокод", callback_data="promo"),
+    )
+    return kb
 
-=========================
-
- START
-
-=========================
-
+# СТАРТ
 @dp.message_handler(commands=["start"])
-async def start(message: types.Message):
-uid = message.from_user.id
-users_balance.setdefault(uid, 0)
+async def start(msg: types.Message):
+    uid = msg.from_user.id
+    users_balance.setdefault(uid, 0)
 
-await message.answer("🚀 Moonlight VPN", reply_markup=main_menu())
+    await msg.answer(
+        f"Баланс: {users_balance[uid]}₽",
+        reply_markup=main_menu()
+    )
 
-=========================
-
- VPN
-
-=========================
-
+# VPN
 @dp.callback_query_handler(lambda c: c.data == "vpn")
 async def vpn(call: types.CallbackQuery):
-uid = call.from_user.id
-balance = users_balance.get(uid, 0)
+    uid = call.from_user.id
 
-if uid not in users_vpn:
-    text = f"❌ Нет VPN\nБаланс: {balance}₽"
-else:
-    vpn = users_vpn[uid]
-    text = f"""💎 VPN активен
+    if uid in users_vpn:
+        await call.message.answer(f"Ваш VPN:\n{users_vpn[uid]}")
+    else:
+        await call.message.answer("У вас нет VPN")
 
-Баланс: {balance}₽
-До: {vpn['expire'].strftime("%d.%m.%Y")}
-
-🔐 {vpn['key']}"""
-
-await call.message.answer(text, reply_markup=main_menu())
-
-=========================
-
- ТАРИФЫ
-
-=========================
-
-@dp.callback_query_handler(lambda c: c.data == "pay")
-async def pay(call: types.CallbackQuery):
-kb = InlineKeyboardMarkup(row_width=1)
-
-for key, t in TARIFFS.items():
-    kb.add(
-        InlineKeyboardButton(
-            f"{t['days']} дней — {t['price']}₽",
-            callback_data=f"buy_{key}"
-        )
-    )
-
-await call.message.answer("💰 Выберите тариф:", reply_markup=kb)
-
-=========================
-
- ПОКУПКА
-
-=========================
-
-@dp.callback_query_handler(lambda c: c.data.startswith("buy_"))
+# КУПИТЬ
+@dp.callback_query_handler(lambda c: c.data == "buy")
 async def buy(call: types.CallbackQuery):
-uid = call.from_user.id
-tariff_id = call.data.split("_")[1]
+    kb = InlineKeyboardMarkup(row_width=2)
 
-tariff = TARIFFS[tariff_id]
-price = tariff["price"]
-days = tariff["days"]
+    for key, t in TARIFFS.items():
+        kb.insert(
+            InlineKeyboardButton(
+                f"{t['days']}д - {t['price']}₽",
+                callback_data=f"buy_{key}"
+            )
+        )
 
-balance = users_balance.get(uid, 0)
+    await call.message.answer("Выбери тариф:", reply_markup=kb)
 
-if balance < price:
-    await call.message.answer(
-        f"❌ Недостаточно средств\n\nНужно: {price}₽\nУ вас: {balance}₽"
-    )
-    return
+# ПОКУПКА
+@dp.callback_query_handler(lambda c: c.data.startswith("buy_"))
+async def process_buy(call: types.CallbackQuery):
+    uid = call.from_user.id
+    plan = call.data.split("_")[1]
 
-users_balance[uid] -= price
+    tariff = TARIFFS[plan]
 
-if uid not in users_vpn:
-    vpn = await create_vpn(uid)
-    users_vpn[uid] = {
-        "key": vpn,
-        "expire": datetime.now() + timedelta(days=days)
-    }
-else:
-    users_vpn[uid]["expire"] += timedelta(days=days)
+    if users_balance.get(uid, 0) < tariff["price"]:
+        await call.message.answer("Недостаточно средств")
+        return
 
-await call.message.answer(
-    f"✅ Активировано {days} дней\n\n🔐 {users_vpn[uid]['key']}"
-)
+    users_balance[uid] -= tariff["price"]
 
-=========================
+    link = f"https://vpn.example.com/{uuid.uuid4()}"
+    users_vpn[uid] = link
 
- DONATION ALERTS
+    await call.message.answer(f"VPN выдан:\n{link}")
 
-=========================
+# ПРОМОКОД
+@dp.callback_query_handler(lambda c: c.data == "promo")
+async def promo(call: types.CallbackQuery):
+    await call.message.answer("Введи промокод:")
 
-async def donate_webhook(request):
-data = await request.json()
+# ВВОД ПРОМО
+@dp.message_handler()
+async def enter_promo(msg: types.Message):
+    uid = msg.from_user.id
+    code = msg.text.upper()
 
-try:
-    username = data["data"]["username"]
-    amount = int(data["data"]["amount"])
+    if code in promo_codes:
+        users_balance[uid] = users_balance.get(uid, 0) + promo_codes[code]
+        await msg.answer(f"Зачислено {promo_codes[code]}₽")
+        del promo_codes[code]
+    else:
+        await msg.answer("Неверный промокод")
 
-    user_id = int(username)
-
-    users_balance[user_id] = users_balance.get(user_id, 0) + amount
-
-    await bot.send_message(
-        user_id,
-        f"💰 Пополнение: {amount}₽\nБаланс: {users_balance[user_id]}₽"
-    )
-
-except Exception as e:
-    print("Webhook error:", e)
-
-return web.Response(text="ok")
-
-=========================
-
- ЗАПУСК
-
-=========================
-
-if name == "main":
-app = web.Application()
-app.router.add_post("/donate", donate_webhook)
-
-dp.loop.create_task(web._run_app(app, port=8080))
-executor.start_polling(dp, skip_updates=True)
+# ЗАПУСК
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)

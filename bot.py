@@ -1,47 +1,41 @@
 import logging
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-# =========================
-# 🔐 ПЕРЕМЕННЫЕ (RAILWAY)
-# =========================
+logging.basicConfig(level=logging.INFO)
+
 TOKEN = os.getenv("BOT_TOKEN")
 DONATE_URL = os.getenv("DA_URL")
-
-if not TOKEN:
-    raise Exception("❌ BOT_TOKEN не найден в переменных")
-
-if not DONATE_URL:
-    raise Exception("❌ DA_URL не найден в переменных")
-
-logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
 # =========================
-# 📌 INLINE МЕНЮ
+# 🔘 ГЛАВНОЕ МЕНЮ (КАК У КУРА)
 # =========================
 def main_menu():
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = ReplyKeyboardMarkup(resize_keyboard=True)
+
     kb.add(
-        InlineKeyboardButton("🔐 Мой VPN", callback_data="vpn"),
-        InlineKeyboardButton("🌍 Серверы", callback_data="servers"),
-        InlineKeyboardButton("👤 Профиль", callback_data="profile"),
-        InlineKeyboardButton("💰 Пополнить", callback_data="pay"),
+        KeyboardButton("💳 Купить/продлить"),
+        KeyboardButton("📱 Мои устройства")
     )
+
+    kb.add(
+        KeyboardButton("🔗 Рефералы"),
+        KeyboardButton("🌐 Web кабинет")
+    )
+
+    kb.add(KeyboardButton("🆘 Помощь"))
+    kb.add(KeyboardButton("🎟 Ввести промокод"))
+
     return kb
 
 
 # =========================
-# 📌 НИЖНЯЯ КНОПКА
+# 🔙 КНОПКА НАЗАД
 # =========================
 def back_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
@@ -54,88 +48,102 @@ def back_menu():
 # =========================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    await message.answer(
-        "🔐 Moonlight VPN\n\nВыберите действие:",
-        reply_markup=main_menu()
+    text = (
+        "🔐 Moonlight VPN\n\n"
+        "💰 Баланс: 0₽\n"
+        "❌ Нет активной подписки\n\n"
+        "Выберите действие:"
     )
+
+    await message.answer(text, reply_markup=main_menu())
 
 
 # =========================
 # 🏠 В МЕНЮ
 # =========================
 @dp.message_handler(lambda m: m.text == "🏠 В меню")
-async def back_to_menu(message: types.Message):
-    await message.answer(
-        "🏠 Главное меню:",
-        reply_markup=main_menu()
-    )
+async def back(message: types.Message):
+    await message.answer("🏠 Главное меню:", reply_markup=main_menu())
 
 
 # =========================
-# 👤 ПРОФИЛЬ
+# 💳 КУПИТЬ
 # =========================
-@dp.callback_query_handler(lambda c: c.data == "profile")
-async def profile(call: types.CallbackQuery):
+@dp.message_handler(lambda m: m.text == "💳 Купить/продлить")
+async def buy(message: types.Message):
     text = (
-        "👤 Профиль\n\n"
-        "Баланс: 0₽\n"
-        "Тариф: ❌ Нет активной подписки\n"
-        f"ID: {call.from_user.id}"
+        "💳 Покупка VPN\n\n"
+        "Перейдите по ссылке для оплаты:\n"
+        f"{DONATE_URL}"
     )
 
-    await call.message.answer(text, reply_markup=back_menu())
-    await call.answer()
+    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
-# 💰 ОПЛАТА
+# 📱 УСТРОЙСТВА
 # =========================
-@dp.callback_query_handler(lambda c: c.data == "pay")
-async def pay(call: types.CallbackQuery):
-    kb = InlineKeyboardMarkup(row_width=1)
-    kb.add(
-        InlineKeyboardButton("💳 Оплатить", url=DONATE_URL)
+@dp.message_handler(lambda m: m.text == "📱 Мои устройства")
+async def devices(message: types.Message):
+    text = (
+        "📱 Ваши устройства:\n\n"
+        "Доступно: 0\n"
+        "Активных: 0"
     )
 
-    await call.message.answer(
-        "💰 Пополнение баланса\n\nПерейдите по кнопке:",
-        reply_markup=kb
+    await message.answer(text, reply_markup=back_menu())
+
+
+# =========================
+# 🔗 РЕФЕРАЛЫ
+# =========================
+@dp.message_handler(lambda m: m.text == "🔗 Рефералы")
+async def refs(message: types.Message):
+    text = (
+        "🔗 Реферальная система\n\n"
+        "Приглашай друзей и получай бонусы"
     )
-    await call.answer()
+
+    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
-# 🌍 СЕРВЕРЫ
+# 🌐 WEB
 # =========================
-@dp.callback_query_handler(lambda c: c.data == "servers")
-async def servers(call: types.CallbackQuery):
-    text = """⚡ Автовыбор (обычные VPN)
-
-🇰🇿 Казахстан
-🇷🇺 Россия
-🇳🇱 Нидерланды
-
-⚡ Автовыбор (обход блокировок)
-
-🇩🇪 Обход 1 — Германия
-🇩🇪 Обход 2 — Германия
-🇩🇪 Обход 3 — Германия
-"""
-
-    await call.message.answer(text, reply_markup=back_menu())
-    await call.answer()
-
-
-# =========================
-# 🔐 МОЙ VPN
-# =========================
-@dp.callback_query_handler(lambda c: c.data == "vpn")
-async def vpn(call: types.CallbackQuery):
-    await call.message.answer(
-        "🔐 У вас нет активного VPN.\n\nПополните баланс.",
-        reply_markup=back_menu()
+@dp.message_handler(lambda m: m.text == "🌐 Web кабинет")
+async def web(message: types.Message):
+    text = (
+        "🌐 Web кабинет\n\n"
+        "Функция в разработке"
     )
-    await call.answer()
+
+    await message.answer(text, reply_markup=back_menu())
+
+
+# =========================
+# 🆘 ПОМОЩЬ
+# =========================
+@dp.message_handler(lambda m: m.text == "🆘 Помощь")
+async def help_cmd(message: types.Message):
+    text = (
+        "🆘 Поддержка\n\n"
+        "Напишите администратору"
+    )
+
+    await message.answer(text, reply_markup=back_menu())
+
+
+# =========================
+# 🎟 ПРОМОКОД
+# =========================
+@dp.message_handler(lambda m: m.text == "🎟 Ввести промокод")
+async def promo(message: types.Message):
+    text = (
+        "🎟 Введите промокод:\n\n"
+        "Функция скоро будет доступна"
+    )
+
+    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================

@@ -32,7 +32,6 @@ TARIFFS = {
 "365": {"days": 365, "price": 799},
 }
 
-👉 ТУТ ТЫ САМ ДОБАВЛЯЕШЬ ПРОМО
 
 promo_codes = {
 "MEOW": {"amount": 30, "uses": 1},

@@ -1,12 +1,9 @@
 import os
 import logging
+from datetime import datetime, timedelta
+
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ReplyKeyboardMarkup,
-    KeyboardButton
-)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
 from aiohttp import web
 
@@ -15,9 +12,10 @@ from aiohttp import web
 # =========================
 TOKEN = os.getenv("BOT_TOKEN")
 DONATE_URL = os.getenv("DONATE_URL")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "your_bot")
 
 if not TOKEN:
-    raise Exception("❌ BOT_TOKEN не найден в ENV")
+    raise Exception("❌ BOT_TOKEN не найден")
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,29 +23,42 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
 # =========================
-# 🧠 ПАМЯТЬ (временно)
+# 🧠 "БАЗА" (в памяти)
 # =========================
-users_balance = {}
-users_vpn = {}
+users = {}
+
+# структура:
+# users[user_id] = {
+#   balance: int,
+#   vpn_key: str,
+#   expire: datetime,
+#   devices: []
+# }
 
 # =========================
-# 📌 МЕНЮ (БОЛЬШИЕ КНОПКИ)
+# 📌 МЕНЮ (КАК У КУРЫ)
 # =========================
 def main_menu():
-    kb = InlineKeyboardMarkup(row_width=1)
+    kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
-        InlineKeyboardButton("🚀 Подключиться к VPN", callback_data="vpn"),
-        InlineKeyboardButton("💰 Купить / Продлить", callback_data="pay"),
+        InlineKeyboardButton("💰 Купить/Продлить", callback_data="buy"),
         InlineKeyboardButton("📱 Мои устройства", callback_data="devices"),
+    )
+    kb.add(
         InlineKeyboardButton("👥 Рефералы", callback_data="ref"),
         InlineKeyboardButton("🆘 Помощь", callback_data="help"),
     )
     return kb
 
-def back_menu():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("🏠 Главное меню"))
+
+def vpn_menu():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("🚀 Подключиться к VPN", callback_data="connect"),
+        InlineKeyboardButton("🏠 Главное меню", callback_data="menu"),
+    )
     return kb
+
 
 # =========================
 # 🚀 СТАРТ
@@ -55,65 +66,92 @@ def back_menu():
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
     uid = message.from_user.id
-    users_balance.setdefault(uid, 0)
 
-    await message.answer(
-        "🚀 Moonlight VPN\n\nВыберите действие:",
-        reply_markup=main_menu()
-    )
+    if uid not in users:
+        users[uid] = {
+            "balance": 0,
+            "vpn_key": None,
+            "expire": None,
+            "devices": []
+        }
 
-# =========================
-# 🏠 В МЕНЮ
-# =========================
-@dp.message_handler(lambda m: m.text == "🏠 Главное меню")
-async def back(message: types.Message):
-    await message.answer("🏠 Главное меню:", reply_markup=main_menu())
+    await show_profile(message.chat.id, uid)
+
 
 # =========================
-# 🔐 VPN
+# 👤 ПРОФИЛЬ (КАК У КУРЫ)
 # =========================
-@dp.callback_query_handler(lambda c: c.data == "vpn")
-async def vpn(call: types.CallbackQuery):
-    uid = call.from_user.id
-    balance = users_balance.get(uid, 0)
+async def show_profile(chat_id, uid):
+    user = users[uid]
 
-    if uid in users_vpn:
-        text = f"""💎 VPN активен
+    if user["vpn_key"]:
+        text = f"""💰 Баланс: {user['balance']}₽
+💎 Тариф: VPN активен
+⏳ До: {user['expire'].strftime("%d.%m.%Y")}
 
-Баланс: {balance}₽
-Ключ:
-{users_vpn[uid]}
+📱 Устройств: {len(user['devices'])}
+
+🔗 Ключ:
+{user['vpn_key']}
 """
     else:
-        text = f"""❌ VPN нет
+        text = f"""💰 Баланс: {user['balance']}₽
+❌ VPN не активен
+"""
 
-Баланс: {balance}₽
-Пополните баланс"""
+    await bot.send_message(chat_id, text, reply_markup=vpn_menu())
+    await bot.send_message(chat_id, "📌 Меню:", reply_markup=main_menu())
 
-    await call.message.answer(text, reply_markup=back_menu())
 
 # =========================
-# 💰 ОПЛАТА
+# 💰 КУПИТЬ
 # =========================
-@dp.callback_query_handler(lambda c: c.data == "pay")
-async def pay(call: types.CallbackQuery):
+@dp.callback_query_handler(lambda c: c.data == "buy")
+async def buy(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup()
     kb.add(InlineKeyboardButton("💳 Оплатить", url=DONATE_URL))
 
     await call.message.answer(
-        "💰 Пополнение\n\nПосле оплаты баланс начислится автоматически",
+        "💰 Оплата\n\nПосле оплаты VPN выдаётся автоматически",
         reply_markup=kb
     )
+
+
+# =========================
+# 🚀 ПОДКЛЮЧИТЬСЯ
+# =========================
+@dp.callback_query_handler(lambda c: c.data == "connect")
+async def connect(call: types.CallbackQuery):
+    uid = call.from_user.id
+    user = users[uid]
+
+    if not user["vpn_key"]:
+        await call.message.answer("❌ У вас нет VPN")
+        return
+
+    await call.message.answer(
+        f"🚀 Ваш ключ:\n{user['vpn_key']}"
+    )
+
 
 # =========================
 # 📱 УСТРОЙСТВА
 # =========================
 @dp.callback_query_handler(lambda c: c.data == "devices")
 async def devices(call: types.CallbackQuery):
-    await call.message.answer(
-        "📱 Устройств пока нет",
-        reply_markup=back_menu()
-    )
+    uid = call.from_user.id
+    user = users[uid]
+
+    if not user["devices"]:
+        await call.message.answer("📱 Устройств нет")
+        return
+
+    text = "📱 Ваши устройства:\n\n"
+    for i, d in enumerate(user["devices"], 1):
+        text += f"{i}. {d}\n"
+
+    await call.message.answer(text)
+
 
 # =========================
 # 👥 РЕФЕРАЛЫ
@@ -121,34 +159,47 @@ async def devices(call: types.CallbackQuery):
 @dp.callback_query_handler(lambda c: c.data == "ref")
 async def ref(call: types.CallbackQuery):
     uid = call.from_user.id
-    link = f"https://t.me/YOUR_BOT?start={uid}"
+
+    link = f"https://t.me/{BOT_USERNAME}?start={uid}"
 
     await call.message.answer(
-        f"👥 Ваша ссылка:\n{link}",
-        reply_markup=back_menu()
+        f"""👥 Реферальная программа
+
+Ваша ссылка:
+{link}
+
+Зарабатывайте % с оплат друзей
+"""
     )
+
 
 # =========================
 # 🆘 ПОМОЩЬ
 # =========================
 @dp.callback_query_handler(lambda c: c.data == "help")
 async def help_cmd(call: types.CallbackQuery):
-    await call.message.answer(
-        "🆘 Поддержка: @your_support",
-        reply_markup=back_menu()
-    )
+    await call.message.answer("🆘 Поддержка: @your_support")
+
 
 # =========================
-# ⚡ VPN ВЫДАЧА
+# ⚡ ВЫДАЧА VPN
 # =========================
 def generate_vpn(user_id):
     return f"https://vpn.example.com/key_{user_id}"
 
+
 def give_vpn(user_id):
-    users_vpn[user_id] = generate_vpn(user_id)
+    user = users[user_id]
+
+    user["vpn_key"] = generate_vpn(user_id)
+    user["expire"] = datetime.now() + timedelta(days=30)
+
+    # добавим устройство
+    user["devices"].append("Android")
+
 
 # =========================
-# 🌐 WEBHOOK (DonationAlerts)
+# 🌐 DONATION ALERTS WEBHOOK
 # =========================
 async def donate_webhook(request):
     data = await request.json()
@@ -159,14 +210,18 @@ async def donate_webhook(request):
 
         user_id = int(username)
 
-        users_balance[user_id] = users_balance.get(user_id, 0) + amount
+        if user_id not in users:
+            return web.Response(text="no user")
 
-        if users_balance[user_id] >= 100 and user_id not in users_vpn:
+        users[user_id]["balance"] += amount
+
+        # тариф: 100₽ = 30 дней
+        if users[user_id]["balance"] >= 100:
             give_vpn(user_id)
 
         await bot.send_message(
             user_id,
-            f"✅ Оплата: {amount}₽\nБаланс: {users_balance[user_id]}₽"
+            f"✅ Оплата: {amount}₽\nБаланс: {users[user_id]['balance']}₽"
         )
 
     except Exception as e:
@@ -174,8 +229,9 @@ async def donate_webhook(request):
 
     return web.Response(text="ok")
 
+
 # =========================
-# 🚀 ЗАПУСК (ВАЖНО)
+# 🚀 ЗАПУСК
 # =========================
 if __name__ == "__main__":
     app = web.Application()

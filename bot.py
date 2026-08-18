@@ -4,80 +4,64 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-logging.basicConfig(level=logging.INFO)
-
+# =========================
+# 🔐 ПЕРЕМЕННЫЕ (Railway)
+# =========================
 TOKEN = os.getenv("BOT_TOKEN")
-DONATE_URL = os.getenv("DA_URL")
+DONATE_URL = os.getenv("DONATE_URL")
+
+logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
 # =========================
-# 🔘 ГЛАВНОЕ МЕНЮ (КАК У КУРА)
+# 🔥 БОЛЬШОЕ МЕНЮ (как Kyra)
 # =========================
 def main_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True)
 
-    kb.add(
-        KeyboardButton("💳 Купить/продлить"),
+    kb.row(
+        KeyboardButton("💳 Купить/Продлить"),
         KeyboardButton("📱 Мои устройства")
     )
-
-    kb.add(
+    kb.row(
         KeyboardButton("🔗 Рефералы"),
         KeyboardButton("🌐 Web кабинет")
     )
-
-    kb.add(KeyboardButton("🆘 Помощь"))
-    kb.add(KeyboardButton("🎟 Ввести промокод"))
+    kb.row(
+        KeyboardButton("🚀 Подключиться к VPN")
+    )
+    kb.row(
+        KeyboardButton("🆘 Помощь")
+    )
+    kb.row(
+        KeyboardButton("🎟 Ввести промокод")
+    )
 
     return kb
 
 
 # =========================
-# 🔙 КНОПКА НАЗАД
-# =========================
-def back_menu():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("🏠 В меню"))
-    return kb
-
-
-# =========================
-# 🚀 START
+# 🚀 СТАРТ
 # =========================
 @dp.message_handler(commands=["start"])
 async def start(message: types.Message):
-    text = (
-        "🔐 Moonlight VPN\n\n"
-        "💰 Баланс: 0₽\n"
-        "❌ Нет активной подписки\n\n"
-        "Выберите действие:"
+    await message.answer(
+        "🔐 Moonlight VPN\n\nДобро пожаловать 👇",
+        reply_markup=main_menu()
     )
 
-    await message.answer(text, reply_markup=main_menu())
-
 
 # =========================
-# 🏠 В МЕНЮ
+# 💳 ПОКУПКА
 # =========================
-@dp.message_handler(lambda m: m.text == "🏠 В меню")
-async def back(message: types.Message):
-    await message.answer("🏠 Главное меню:", reply_markup=main_menu())
-
-
-# =========================
-# 💳 КУПИТЬ
-# =========================
-@dp.message_handler(lambda m: m.text == "💳 Купить/продлить")
+@dp.message_handler(lambda m: m.text == "💳 Купить/Продлить")
 async def buy(message: types.Message):
-    text = (
-        "💳 Покупка VPN\n\n"
-        "Перейдите по ссылке для оплаты:\n"
-        f"{DONATE_URL}"
+    await message.answer(
+        f"💳 Оплата\n\nПерейди по ссылке:\n{DONATE_URL}",
+        reply_markup=main_menu()
     )
-
-    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
@@ -85,13 +69,10 @@ async def buy(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "📱 Мои устройства")
 async def devices(message: types.Message):
-    text = (
-        "📱 Ваши устройства:\n\n"
-        "Доступно: 0\n"
-        "Активных: 0"
+    await message.answer(
+        "📱 Устройства\n\nУ вас пока нет подключённых устройств",
+        reply_markup=main_menu()
     )
-
-    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
@@ -99,12 +80,14 @@ async def devices(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🔗 Рефералы")
 async def refs(message: types.Message):
-    text = (
-        "🔗 Реферальная система\n\n"
-        "Приглашай друзей и получай бонусы"
-    )
+    ref_link = f"https://t.me/{(await bot.get_me()).username}?start={message.from_user.id}"
 
-    await message.answer(text, reply_markup=back_menu())
+    await message.answer(
+        f"👥 Реферальная программа\n\n"
+        f"Ваша ссылка:\n{ref_link}\n\n"
+        f"Доход: 0₽",
+        reply_markup=main_menu()
+    )
 
 
 # =========================
@@ -112,12 +95,21 @@ async def refs(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🌐 Web кабинет")
 async def web(message: types.Message):
-    text = (
-        "🌐 Web кабинет\n\n"
-        "Функция в разработке"
+    await message.answer(
+        "🌐 Кабинет:\nhttps://client.disavi.store/",
+        reply_markup=main_menu()
     )
 
-    await message.answer(text, reply_markup=back_menu())
+
+# =========================
+# 🚀 VPN
+# =========================
+@dp.message_handler(lambda m: m.text == "🚀 Подключиться к VPN")
+async def vpn(message: types.Message):
+    await message.answer(
+        "🚀 У вас нет активной подписки\n\nСначала пополните баланс",
+        reply_markup=main_menu()
+    )
 
 
 # =========================
@@ -125,12 +117,10 @@ async def web(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🆘 Помощь")
 async def help_cmd(message: types.Message):
-    text = (
-        "🆘 Поддержка\n\n"
-        "Напишите администратору"
+    await message.answer(
+        "🆘 Поддержка: @your_support",
+        reply_markup=main_menu()
     )
-
-    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
@@ -138,16 +128,17 @@ async def help_cmd(message: types.Message):
 # =========================
 @dp.message_handler(lambda m: m.text == "🎟 Ввести промокод")
 async def promo(message: types.Message):
-    text = (
-        "🎟 Введите промокод:\n\n"
-        "Функция скоро будет доступна"
+    await message.answer(
+        "Введите промокод:",
+        reply_markup=main_menu()
     )
-
-    await message.answer(text, reply_markup=back_menu())
 
 
 # =========================
 # 🚀 ЗАПУСК
 # =========================
 if __name__ == "__main__":
+    if not TOKEN:
+        raise ValueError("❌ BOT_TOKEN не найден в переменных Railway")
+
     executor.start_polling(dp, skip_updates=True)
